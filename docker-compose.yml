@@ -1,0 +1,153 @@
+version: '3.8'
+
+services:
+  # Databases
+  user-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: user_service_db
+      POSTGRES_USER: user_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user_service_user -d user_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  post-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: post_service_db
+      POSTGRES_USER: post_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - post_db_data:/var/lib/postgresql/data
+
+  comment-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: comment_service_db
+      POSTGRES_USER: comment_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+    volumes:
+      - comment_db_data:/var/lib/postgresql/data
+
+  chat-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: chat_service_db
+      POSTGRES_USER: chat_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    volumes:
+      - chat_db_data:/var/lib/postgresql/data
+
+  media-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: media_service_db
+      POSTGRES_USER: media_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+    volumes:
+      - media_db_data:/var/lib/postgresql/data
+
+  notification-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: notification_service_db
+      POSTGRES_USER: notification_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5437:5432"
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+
+  analytics-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: analytics_service_db
+      POSTGRES_USER: analytics_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5438:5432"
+    volumes:
+      - analytics_db_data:/var/lib/postgresql/data
+
+  search-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: search_service_db
+      POSTGRES_USER: search_service_user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5439:5432"
+    volumes:
+      - search_db_data:/var/lib/postgresql/data
+
+  # Redis for caching and pub/sub
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Elasticsearch for search service
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3030:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  user_db_data:
+  post_db_data:
+  comment_db_data:
+  chat_db_data:
+  media_db_data:
+  notification_db_data:
+  analytics_db_data:
+  search_db_data:
+  redis_data:
+  elasticsearch_data:
+  prometheus_data:
+  grafana_data:

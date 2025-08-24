@@ -1,0 +1,31 @@
+{
+  "name": "social-platform-backend",
+  "version": "1.0.0",
+  "description": "Social Platform Microservices Backend",
+  "main": "index.js",
+  "scripts": {
+    "install:all": "npm run install:services && npm run install:shared",
+    "install:services": "for dir in services/*; do (cd \"$dir\" && npm install); done",
+    "install:shared": "cd shared && npm install",
+    "dev": "docker-compose up -d && concurrently \"npm run dev:user\" \"npm run dev:post\" \"npm run dev:comment\" \"npm run dev:chat\" \"npm run dev:media\" \"npm run dev:notification\" \"npm run dev:analytics\" \"npm run dev:search\"",
+    "dev:user": "cd services/user-service && npm run dev",
+    "dev:post": "cd services/post-service && npm run dev",
+    "dev:comment": "cd services/comment-service && npm run dev",
+    "dev:chat": "cd services/chat-service && npm run dev",
+    "dev:media": "cd services/media-service && npm run dev",
+    "dev:notification": "cd services/notification-service && npm run dev",
+    "dev:analytics": "cd services/analytics-service && npm run dev",
+    "dev:search": "cd services/search-service && npm run dev",
+    "build": "npm run build:services",
+    "build:services": "for dir in services/*; do (cd \"$dir\" && npm run build); done",
+    "test": "npm run test:services",
+    "test:services": "for dir in services/*; do (cd \"$dir\" && npm test); done",
+    "db:generate": "for dir in services/*; do (cd \"$dir\" && npm run db:generate); done",
+    "db:migrate": "for dir in services/*; do (cd \"$dir\" && npm run db:migrate); done",
+    "db:seed": "for dir in services/*; do (cd \"$dir\" && npm run db:seed); done"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "cross-env": "^10.0.0"
+  }
+}
