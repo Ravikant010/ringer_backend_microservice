@@ -25,7 +25,12 @@
     "db:seed": "for dir in services/*; do (cd \"$dir\" && npm run db:seed); done"
   },
   "devDependencies": {
+    "@types/morgan": "^1.9.10",
     "concurrently": "^9.2.0",
     "cross-env": "^10.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "morgan": "^1.10.1"
   }
 }

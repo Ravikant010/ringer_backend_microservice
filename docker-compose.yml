@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: user_service_db
       POSTGRES_USER: user_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5432:5432"
     volumes:
@@ -23,7 +23,7 @@ services:
     environment:
       POSTGRES_DB: post_service_db
       POSTGRES_USER: post_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5433:5432"
     volumes:
@@ -34,7 +34,7 @@ services:
     environment:
       POSTGRES_DB: comment_service_db
       POSTGRES_USER: comment_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5434:5432"
     volumes:
@@ -45,7 +45,7 @@ services:
     environment:
       POSTGRES_DB: chat_service_db
       POSTGRES_USER: chat_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5435:5432"
     volumes:
@@ -56,7 +56,7 @@ services:
     environment:
       POSTGRES_DB: media_service_db
       POSTGRES_USER: media_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5436:5432"
     volumes:
@@ -67,7 +67,7 @@ services:
     environment:
       POSTGRES_DB: notification_service_db
       POSTGRES_USER: notification_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5437:5432"
     volumes:
@@ -78,7 +78,7 @@ services:
     environment:
       POSTGRES_DB: analytics_service_db
       POSTGRES_USER: analytics_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
     ports:
       - "5438:5432"
     volumes:
@@ -89,7 +89,7 @@ services:
     environment:
       POSTGRES_DB: search_service_db
       POSTGRES_USER: search_service_user
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: peter435  # ← Already correct
     ports:
       - "5439:5432"
     volumes:

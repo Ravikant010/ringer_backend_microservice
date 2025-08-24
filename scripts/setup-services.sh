@@ -58,7 +58,7 @@ EOL
     # Create environment example
     cat > .env.example << EOL
 # Database
-DATABASE_URL=postgresql://${service}_user:password@localhost:5432/${service}_db
+DATABASE_URL=postgresql://${service}_user:peter435@localhost:5432/${service}_db
 
 # JWT
 JWT_SECRET=your-jwt-secret-here
