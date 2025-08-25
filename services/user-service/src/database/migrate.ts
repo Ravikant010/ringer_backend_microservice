@@ -1,18 +1,17 @@
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
-import dotenv from 'dotenv'
 import path from 'path'
 
 // Load environment variables
-dotenv.config({ path: path.resolve(__dirname, '../../.env') })
+// dotenv.config({ path: path.resolve(__dirname, '../../.env') })
 
-if (!process.env.DATABASE_URL) {
+if (!Bun.env.DATABASE_URL) {
   console.error('❌ DATABASE_URL is not defined in environment variables')
   process.exit(1)
 }
 
-const connectionString = process.env.DATABASE_URL
+const connectionString = Bun.env.DATABASE_URL
 const migrationClient = postgres(connectionString, { max: 1 })
 const db = drizzle(migrationClient)
 

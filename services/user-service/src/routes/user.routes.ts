@@ -5,6 +5,7 @@ import { authenticateToken, optionalAuth } from '../middleware/auth'
 const router = Router()
 
 // Public routes (with optional authentication)
+router.get('/test', (req, res)=>res.send("User Service is running"))
 router.get('/profile/:userId', optionalAuth, userController.getProfile)
 router.get('/search', userController.searchUsers)
 
@@ -16,4 +17,3 @@ router.get('/:userId/followers', optionalAuth, userController.getFollowers)
 router.get('/:userId/following', optionalAuth, userController.getFollowing)
 
 export default router
-router.get('/profile/:userId', optionalAuth, userController.getProfile)

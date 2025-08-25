@@ -7,7 +7,7 @@
     "install:all": "npm run install:services && npm run install:shared",
     "install:services": "for dir in services/*; do (cd \"$dir\" && npm install); done",
     "install:shared": "cd shared && npm install",
-    "dev": "docker-compose up -d && concurrently \"npm run dev:user\" \"npm run dev:post\" \"npm run dev:comment\" \"npm run dev:chat\" \"npm run dev:media\" \"npm run dev:notification\" \"npm run dev:analytics\" \"npm run dev:search\"",
+   "dev": "concurrently --prefix-colors='cyan,magenta,green,yellow,blue,red,white,gray' --prefix='[{name}]' --names='user-service,post-service,comment-service,chat-service,media-service,notification-service,analytics-service,search-service' 'cd services/user-service && bun run dev' 'cd services/post-service && bun run dev' 'cd services/comment-service && bun run dev' 'cd services/chat-service && bun run dev' 'cd services/media-service && bun run dev' 'cd services/notification-service && bun run dev' 'cd services/analytics-service && bun run dev' 'cd services/search-service && bun run dev'",
     "dev:user": "cd services/user-service && npm run dev",
     "dev:post": "cd services/post-service && npm run dev",
     "dev:comment": "cd services/comment-service && npm run dev",
@@ -27,10 +27,14 @@
   "devDependencies": {
     "@types/morgan": "^1.9.10",
     "concurrently": "^9.2.0",
-    "cross-env": "^10.0.0"
+    "cross-env": "^10.0.0",
+    "@types/bun": "latest"
   },
   "dependencies": {
     "dotenv": "^17.2.1",
     "morgan": "^1.10.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
   }
 }

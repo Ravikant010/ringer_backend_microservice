@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken'
 import { User } from '../database/schema'
 
-if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+if (!Bun.env.JWT_SECRET || !Bun.env.JWT_REFRESH_SECRET) {
   throw new Error('JWT secrets are not defined')
 }
 
@@ -13,8 +13,8 @@ export interface TokenPayload {
 }
 
 export class JWTService {
-  private readonly accessTokenSecret = process.env.JWT_SECRET!
-  private readonly refreshTokenSecret = process.env.JWT_REFRESH_SECRET!
+  private readonly accessTokenSecret = Bun.env.JWT_SECRET!
+  private readonly refreshTokenSecret = Bun.env.JWT_REFRESH_SECRET!
   private readonly accessTokenExpiry = '15m'
   private readonly refreshTokenExpiry = '7d'
 
