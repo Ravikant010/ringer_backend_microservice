@@ -86,7 +86,7 @@ install_service() {
 }
 
 # Install for all services
-services=("user-service" "post-service" "comment-service" "chat-service" "media-service" "notification-service" "analytics-service" "search-service")
+services=("user_service" "post_service" "comment_service" "chat_service" "media_service" "notification_service" "analytics_service" "search_service")
 
 for service in "${services[@]}"; do
     install_service $service

@@ -52,33 +52,8 @@ app.use(globalLimiter)
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
-// app.use('*', (req, res) => {
-//   res.status(404).json({
-//     success: false,
-//     error: 'Route not found',
-//     code: 'ROUTE_NOT_FOUND',
-//     path: req.originalUrl
-//   })
-// })
-// Logging
 app.use(morgan('combined'))
 
-// // Health check
-// app.get('/health', async (req, res) => {
-//   const dbConnected = await checkDatabaseConnection()
-
-//   res.status(dbConnected ? 200 : 503).json({
-//     success: true,
-//     service: 'user-service',
-//     version: '1.0.0',
-//     timestamp: new Date().toISOString(),
-//     uptime: Math.floor(process.uptime()),
-//     database: dbConnected ? 'connected' : 'disconnected',
-//     environment: process.env.NODE_ENV || 'development'
-//   })
-// })
-
-// API routes
 app.use('/api/v1/auth', authRoutes)
 app.use('/api/v1/users', userRoutes)
 

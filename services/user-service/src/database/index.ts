@@ -2,7 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from './schema'
 
-import { dot } from 'node:test/reporters'
+
 
 if (!Bun.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not defined')
