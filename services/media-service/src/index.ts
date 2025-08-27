@@ -4,8 +4,9 @@ const PORT = process.env.PORT || 3004
 
 async function startServer() {
   try {
-    // TODO: Import and start your app here
-    logger.info(`media-service running on port ${PORT}`)
+
+  //    await client`select 1`
+  //  app.listen(PORT, ()=>console.log(`User service running on port ${PORT}`))
   } catch (error) {
     logger.error('Failed to start server:', error)
     process.exit(1)
