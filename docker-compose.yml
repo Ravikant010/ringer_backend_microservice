@@ -1,13 +1,173 @@
+# version: '3.8'
+
+# services:
+#   # Databases
+#   user-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: user_service_db
+#       POSTGRES_USER: user_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - user_db_data:/var/lib/postgresql/data
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U user_service_user -d user_service_db"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+
+#   post-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: post_service_db
+#       POSTGRES_USER: post_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5433:5432"
+#     volumes:
+#       - post_db_data:/var/lib/postgresql/data
+
+#   comment-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: comment_service_db
+#       POSTGRES_USER: comment_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5434:5432"
+#     volumes:
+#       - comment_db_data:/var/lib/postgresql/data
+
+#   chat-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: chat_service_db
+#       POSTGRES_USER: chat_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5435:5432"
+#     volumes:
+#       - chat_db_data:/var/lib/postgresql/data
+
+#   media-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: media_service_db
+#       POSTGRES_USER: media_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5436:5432"
+#     volumes:
+#       - media_db_data:/var/lib/postgresql/data
+
+#   notification-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: notification_service_db
+#       POSTGRES_USER: notification_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5437:5432"
+#     volumes:
+#       - notification_db_data:/var/lib/postgresql/data
+
+#   analytics-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: analytics_service_db
+#       POSTGRES_USER: analytics_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+#     ports:
+#       - "5438:5432"
+#     volumes:
+#       - analytics_db_data:/var/lib/postgresql/data
+
+#   search-db:
+#     image: postgres:15
+#     environment:
+#       POSTGRES_DB: search_service_db
+#       POSTGRES_USER: search_service_user
+#       POSTGRES_PASSWORD: peter435  # ← Already correct
+#     ports:
+#       - "5439:5432"
+#     volumes:
+#       - search_db_data:/var/lib/postgresql/data
+
+#   # Redis for caching and pub/sub
+#   redis:
+#     image: redis:7-alpine
+#     ports:
+#       - "6379:6379"
+#     volumes:
+#       - redis_data:/data
+#     healthcheck:
+#       test: ["CMD", "redis-cli", "ping"]
+#       interval: 30s
+#       timeout: 10s
+#       retries: 3
+
+#   # Elasticsearch for search service
+#   elasticsearch:
+#     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+#     environment:
+#       - discovery.type=single-node
+#       - xpack.security.enabled=false
+#       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+#     ports:
+#       - "9200:9200"
+#     volumes:
+#       - elasticsearch_data:/usr/share/elasticsearch/data
+
+#   # Monitoring
+#   prometheus:
+#     image: prom/prometheus:latest
+#     ports:
+#       - "9090:9090"
+#     volumes:
+#       - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+#       - prometheus_data:/prometheus
+
+#   grafana:
+#     image: grafana/grafana:latest
+#     ports:
+#       - "3030:3000"
+#     environment:
+#       - GF_SECURITY_ADMIN_PASSWORD=admin
+#     volumes:
+#       - grafana_data:/var/lib/grafana
+
+# volumes:
+#   user_db_data:
+#   post_db_data:
+#   comment_db_data:
+#   chat_db_data:
+#   media_db_data:
+#   notification_db_data:
+#   analytics_db_data:
+#   search_db_data:
+#   redis_data:
+#   elasticsearch_data:
+#   prometheus_data:
+#   grafana_data:
 version: '3.8'
 
+networks:
+  social-platform:
+    driver: bridge
+  monitoring:
+    driver: bridge
+
 services:
-  # Databases
+  # ===== DATABASES =====
   user-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: user-db
     environment:
       POSTGRES_DB: user_service_db
       POSTGRES_USER: user_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5432:5432"
     volumes:
@@ -17,137 +177,515 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   post-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: post-db
     environment:
       POSTGRES_DB: post_service_db
       POSTGRES_USER: post_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5433:5432"
     volumes:
       - post_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U post_service_user -d post_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   comment-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: comment-db
     environment:
       POSTGRES_DB: comment_service_db
       POSTGRES_USER: comment_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5434:5432"
     volumes:
       - comment_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comment_service_user -d comment_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   chat-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: chat-db
     environment:
       POSTGRES_DB: chat_service_db
       POSTGRES_USER: chat_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5435:5432"
     volumes:
       - chat_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat_service_user -d chat_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   media-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: media-db
     environment:
       POSTGRES_DB: media_service_db
       POSTGRES_USER: media_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5436:5432"
     volumes:
       - media_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U media_service_user -d media_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   notification-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: notification-db
     environment:
       POSTGRES_DB: notification_service_db
       POSTGRES_USER: notification_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5437:5432"
     volumes:
       - notification_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification_service_user -d notification_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   analytics-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: analytics-db
     environment:
       POSTGRES_DB: analytics_service_db
       POSTGRES_USER: analytics_service_user
-      POSTGRES_PASSWORD: peter435  # ← Changed from "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5438:5432"
     volumes:
       - analytics_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics_service_user -d analytics_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
   search-db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: search-db
     environment:
       POSTGRES_DB: search_service_db
       POSTGRES_USER: search_service_user
-      POSTGRES_PASSWORD: peter435  # ← Already correct
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
       - "5439:5432"
     volumes:
       - search_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U search_service_user -d search_service_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
-  # Redis for caching and pub/sub
+  # ===== INFRASTRUCTURE =====
   redis:
     image: redis:7-alpine
+    container_name: redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
-  # Elasticsearch for search service
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     ports:
       - "9200:9200"
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - social-platform
+    restart: unless-stopped
 
-  # Monitoring
+  # ===== MICROSERVICES =====
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3001
+      - DATABASE_URL=postgresql://user_service_user:${POSTGRES_PASSWORD:-peter435}@user-db:5432/user_service_db
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - SERVICE_NAME=user-service
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  post-service:
+    build:
+      context: ./services/post-service
+      dockerfile: Dockerfile
+    container_name: post-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3002
+      - DATABASE_URL=postgresql://post_service_user:${POSTGRES_PASSWORD:-peter435}@post-db:5432/post_service_db
+      - SERVICE_NAME=post-service
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      post-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  comment-service:
+    build:
+      context: ./services/comment-service
+      dockerfile: Dockerfile
+    container_name: comment-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3003
+      - DATABASE_URL=postgresql://comment_service_user:${POSTGRES_PASSWORD:-peter435}@comment-db:5432/comment_service_db
+      - SERVICE_NAME=comment-service
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      comment-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  chat-service:
+    build:
+      context: ./services/chat-service
+      dockerfile: Dockerfile
+    container_name: chat-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3004
+      - DATABASE_URL=postgresql://chat_service_user:${POSTGRES_PASSWORD:-peter435}@chat-db:5432/chat_service_db
+      - SERVICE_NAME=chat-service
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  media-service:
+    build:
+      context: ./services/media-service
+      dockerfile: Dockerfile
+    container_name: media-service
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3005
+      - DATABASE_URL=postgresql://media_service_user:${POSTGRES_PASSWORD:-peter435}@media-db:5432/media_service_db
+      - MEDIA_STORAGE_PATH=/app/storage
+      - MEDIA_BASE_URL=http://localhost:3005/files
+      - SERVICE_NAME=media-service
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - media_storage:/app/storage
+    depends_on:
+      media-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3006
+      - DATABASE_URL=postgresql://notification_service_user:${POSTGRES_PASSWORD:-peter435}@notification-db:5432/notification_service_db
+      - SERVICE_NAME=notification-service
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-service
+    ports:
+      - "3007:3007"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3007
+      - DATABASE_URL=postgresql://analytics_service_user:${POSTGRES_PASSWORD:-peter435}@analytics-db:5432/analytics_service_db
+      - SERVICE_NAME=analytics-service
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  search-service:
+    build:
+      context: ./services/search-service
+      dockerfile: Dockerfile
+    container_name: search-service
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3008
+      - DATABASE_URL=postgresql://search_service_user:${POSTGRES_PASSWORD:-peter435}@search-db:5432/search_service_db
+      - SERVICE_NAME=search-service
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      search-db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ===== MONITORING =====
   prometheus:
     image: prom/prometheus:latest
+    container_name: prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - monitoring
+      - social-platform
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
+    container_name: grafana
     ports:
       - "3030:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # ===== API GATEWAY (NGINX) =====
+  nginx:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - user-service
+      - post-service
+      - comment-service
+      - chat-service
+      - media-service
+      - notification-service
+      - analytics-service
+      - search-service
+    networks:
+      - social-platform
+    restart: unless-stopped
 
 volumes:
   user_db_data:
+    driver: local
   post_db_data:
+    driver: local
   comment_db_data:
+    driver: local
   chat_db_data:
+    driver: local
   media_db_data:
+    driver: local
   notification_db_data:
+    driver: local
   analytics_db_data:
+    driver: local
   search_db_data:
+    driver: local
   redis_data:
+    driver: local
   elasticsearch_data:
+    driver: local
   prometheus_data:
+    driver: local
   grafana_data:
+    driver: local
+  media_storage:
+    driver: local

@@ -1,15 +1,19 @@
-import { logger } from './utils/logger'
 
-const PORT = process.env.PORT || 3005
+import app from './app'
+import { client } from './database'
 
-async function startServer() {
+const PORT = Number(Bun.env.PORT ?? 3008)
+
+async function start() {
   try {
-    // TODO: Import and start your app here
-    logger.info(`search-service running on port ${PORT}`)
-  } catch (error) {
-    logger.error('Failed to start server:', error)
+    await client`select 1`
+    app.listen(PORT, () => {
+      console.log(`search-service running on port ${PORT}`)
+    })
+  } catch (err) {
+    console.error('Failed to start search-service', err)
     process.exit(1)
   }
 }
 
-startServer()
+start()

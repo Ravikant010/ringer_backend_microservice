@@ -1,0 +1,143 @@
+name: Deploy Microservices to AWS EC2
+
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch: # Allow manual triggers
+
+env:
+  DEPLOYMENT_PATH: /home/ec2-user/microservices-app
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Test SSH Connection
+      run: |
+        ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo 'SSH connection successful'"
+
+    - name: Stop existing services
+      run: |
+        ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ${{ env.DEPLOYMENT_PATH }} || true
+          if [ -f docker-compose.yml ]; then
+            echo "Stopping existing services..."
+            sudo docker-compose down || true
+          fi
+        EOF
+
+    - name: Deploy application
+      run: |
+        ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          echo "Starting deployment..."
+          
+          # Create deployment directory if it doesn't exist
+          mkdir -p ${{ env.DEPLOYMENT_PATH }}
+          cd ${{ env.DEPLOYMENT_PATH }}
+          
+          # Clone/update repository
+          if [ -d ".git" ]; then
+            echo "Updating existing repository..."
+            git fetch --all
+            git reset --hard origin/main
+            git pull origin main
+          else
+            echo "Cloning repository..."
+            git clone https://github.com/${{ github.repository }}.git .
+          fi
+          
+          # Set permissions
+          chmod +x scripts/*.sh 2>/dev/null || true
+          
+          # Build and start services
+          echo "Building and starting services..."
+          sudo docker-compose build --no-cache
+          sudo docker-compose up -d
+          
+          # Wait for services to start
+          echo "Waiting for services to start..."
+          sleep 30
+          
+        EOF
+
+    - name: Health Check Services
+      run: |
+        ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ${{ env.DEPLOYMENT_PATH }}
+          
+          echo "=== Container Status ==="
+          sudo docker-compose ps
+          
+          echo "=== Health Checks ==="
+          
+          # Health check function
+          check_service() {
+            local service_name=$1
+            local port=$2
+            local max_retries=5
+            local retry=0
+            
+            while [ $retry -lt $max_retries ]; do
+              if curl -f -s http://localhost:$port/health > /dev/null; then
+                echo "✅ $service_name is healthy (port $port)"
+                return 0
+              else
+                echo "⏳ $service_name not ready yet (attempt $((retry+1))/$max_retries)"
+                sleep 10
+                retry=$((retry+1))
+              fi
+            done
+            
+            echo "❌ $service_name failed health check (port $port)"
+            return 1
+          }
+          
+          # Check all services
+          check_service "user-service" 3001
+          check_service "post-service" 3002
+          check_service "comment-service" 3003
+          check_service "chat-service" 3004
+          check_service "media-service" 3005
+          check_service "notification-service" 3006
+          check_service "analytics-service" 3007
+          check_service "search-service" 3008
+          
+          echo "=== Container Logs (last 10 lines) ==="
+          sudo docker-compose logs --tail=10
+          
+        EOF
+
+    - name: Post-deployment cleanup
+      if: always()
+      run: |
+        rm -f ~/.ssh/deploy_key
+
+    - name: Deployment Summary
+      run: |
+        echo "🎉 Deployment completed successfully!"
+        echo "📊 Services deployed:"
+        echo "   • User Service: http://${{ secrets.EC2_HOST }}:3001"
+        echo "   • Post Service: http://${{ secrets.EC2_HOST }}:3002"
+        echo "   • Comment Service: http://${{ secrets.EC2_HOST }}:3003"
+        echo "   • Chat Service: http://${{ secrets.EC2_HOST }}:3004"
+        echo "   • Media Service: http://${{ secrets.EC2_HOST }}:3005"
+        echo "   • Notification Service: http://${{ secrets.EC2_HOST }}:3006"
+        echo "   • Analytics Service: http://${{ secrets.EC2_HOST }}:3007"
+        echo "   • Search Service: http://${{ secrets.EC2_HOST }}:3008"
+
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "❌ Deployment failed! Check the logs above for details."
