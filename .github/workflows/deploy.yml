@@ -1,62 +1,77 @@
-name: Deploy Microservices to AWS EC2
+name: Deploy Microservices to AWS EC2 (SSH)
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Allow manual triggers
+  workflow_dispatch:
 
 env:
   APP_DIR: /home/ec2-user/microservices-app
 
 jobs:
   deploy:
-    name: Deploy to EC2
+    name: Deploy to EC2 via SSH
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Set up SSH
+    - name: Set up SSH for EC2
       run: |
         mkdir -p ~/.ssh
         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
         chmod 600 ~/.ssh/deploy_key
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Test SSH Connection
-      run: |
-        ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo '✅ SSH connection successful'"
-
-    - name: Deploy Application
+    - name: Deploy Application with SSH Authentication
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          set -e  # Exit on any error
+          set -e
           
           echo "📁 Setting up deployment directory..."
           mkdir -p ${{ env.APP_DIR }}
           cd ${{ env.APP_DIR }}
           
-          # Check if this is first deployment or update
+          # Set up SSH key for GitHub access on EC2
+          mkdir -p ~/.ssh
+          echo "${{ secrets.REPO_SSH_KEY }}" > ~/.ssh/github_deploy_key
+          chmod 600 ~/.ssh/github_deploy_key
+          
+          # Add GitHub to known hosts
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Create SSH config for GitHub
+          cat > ~/.ssh/config << 'SSH_CONFIG'
+        Host github.com
+          HostName github.com
+          User git
+          IdentityFile ~/.ssh/github_deploy_key
+          StrictHostKeyChecking no
+        SSH_CONFIG
+          chmod 600 ~/.ssh/config
+          
+          # Test SSH connection to GitHub
+          echo "🔗 Testing GitHub SSH connection..."
+          ssh -T git@github.com || true
+          
+          # Clone or update repository
           if [ ! -d ".git" ]; then
-            echo "🆕 First deployment - cloning repository..."
-            rm -rf * .[^.]* 2>/dev/null || true  # Clean directory completely
-            git clone https://github.com/${{ github.repository }}.git .
+            echo "🆕 First deployment - cloning repository via SSH..."
+            rm -rf * .[^.]* 2>/dev/null || true
+            git clone git@github.com:${{ github.repository }}.git .
           else
-            echo "🔄 Updating existing repository..."
+            echo "🔄 Updating existing repository via SSH..."
+            # Update remote URL to use SSH
+            git remote set-url origin git@github.com:${{ github.repository }}.git
+            
             # Stash any local changes
             git stash push -m "Auto-stash before deployment" 2>/dev/null || true
             
-            # Fetch latest changes
+            # Fetch and reset
             git fetch origin main
-            
-            # Reset to remote state (removes any local modifications)
             git reset --hard origin/main
-            
-            # Clean untracked files
             git clean -fd
-            
-            # Pull latest changes
             git pull origin main
           fi
           
@@ -87,14 +102,14 @@ jobs:
           
         EOF
 
-    - name: Health Check Services
+    - name: Health Check All Services
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
           cd ${{ env.APP_DIR }}
           
-          echo "=== Health Check Results ==="
+          echo "=== Comprehensive Health Check ==="
           
-          # Define services and ports
+          # Define all services with their ports
           declare -A services=(
             ["user-service"]=3001
             ["post-service"]=3002
@@ -109,65 +124,97 @@ jobs:
           healthy_count=0
           total_count=${#services[@]}
           
+          echo "Checking $total_count services..."
+          
           for service in "${!services[@]}"; do
             port=${services[$service]}
             
             # Check if container is running
             if sudo docker-compose ps $service | grep -q "Up"; then
-              # Check health endpoint with retry
-              for i in {1..3}; do
-                if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null; then
+              # Health endpoint check with retries
+              for attempt in {1..3}; do
+                if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null 2>&1; then
                   echo "✅ $service is healthy (port $port)"
                   healthy_count=$((healthy_count + 1))
                   break
-                elif [ $i -eq 3 ]; then
+                elif [ $attempt -eq 3 ]; then
                   echo "⚠️  $service container running but health check failed (port $port)"
+                  # Show container logs for failed service
+                  echo "Last 5 lines of $service logs:"
+                  sudo docker-compose logs --tail=5 $service
                 else
+                  echo "⏳ $service not ready, retrying... ($attempt/3)"
                   sleep 5
                 fi
               done
             else
               echo "❌ $service container is not running"
+              # Show why container failed
+              echo "Container status for $service:"
+              sudo docker-compose ps $service
+              echo "Last 5 lines of $service logs:"
+              sudo docker-compose logs --tail=5 $service
             fi
           done
           
-          echo "=== Summary ==="
-          echo "Healthy services: $healthy_count/$total_count"
+          echo "=========================="
+          echo "Health Summary: $healthy_count/$total_count services healthy"
           
-          if [ $healthy_count -gt 0 ]; then
-            echo "🎉 Deployment completed!"
+          if [ $healthy_count -eq $total_count ]; then
+            echo "🎉 All services are healthy! Deployment successful!"
+          elif [ $healthy_count -gt 0 ]; then
+            echo "⚠️  Partial deployment success ($healthy_count/$total_count services healthy)"
           else
-            echo "⚠️  No services are healthy. Check logs:"
-            sudo docker-compose logs --tail=20
+            echo "❌ Deployment failed - no services are healthy"
+            echo "Full container status:"
+            sudo docker-compose ps
             exit 1
           fi
           
         EOF
 
-    - name: Show Service URLs
+    - name: Display Service URLs
       if: success()
       run: |
-        echo "🌐 Your services are available at:"
-        echo "   • User Service: http://${{ secrets.EC2_HOST }}:3001"
-        echo "   • Post Service: http://${{ secrets.EC2_HOST }}:3002"
-        echo "   • Comment Service: http://${{ secrets.EC2_HOST }}:3003"
-        echo "   • Chat Service: http://${{ secrets.EC2_HOST }}:3004"
-        echo "   • Media Service: http://${{ secrets.EC2_HOST }}:3005"
-        echo "   • Notification Service: http://${{ secrets.EC2_HOST }}:3006"
-        echo "   • Analytics Service: http://${{ secrets.EC2_HOST }}:3007"
-        echo "   • Search Service: http://${{ secrets.EC2_HOST }}:3008"
+        echo "🌐 Your microservices are now live at:"
+        echo ""
+        echo "   🚀 User Service:         http://${{ secrets.EC2_HOST }}:3001"
+        echo "   📝 Post Service:         http://${{ secrets.EC2_HOST }}:3002"
+        echo "   💬 Comment Service:      http://${{ secrets.EC2_HOST }}:3003"
+        echo "   💬 Chat Service:         http://${{ secrets.EC2_HOST }}:3004"
+        echo "   📁 Media Service:        http://${{ secrets.EC2_HOST }}:3005"
+        echo "   🔔 Notification Service: http://${{ secrets.EC2_HOST }}:3006"
+        echo "   📊 Analytics Service:    http://${{ secrets.EC2_HOST }}:3007"
+        echo "   🔍 Search Service:       http://${{ secrets.EC2_HOST }}:3008"
+        echo ""
+        echo "Health Check URLs (add /health to any service URL):"
+        echo "   Example: curl http://${{ secrets.EC2_HOST }}:3001/health"
 
-    - name: Cleanup SSH Key
+    - name: Cleanup SSH Keys
       if: always()
       run: |
         rm -f ~/.ssh/deploy_key
 
-    - name: Failure Troubleshooting
+    - name: Deployment Failure Help
       if: failure()
       run: |
         echo "❌ Deployment failed!"
-        echo "🔍 Troubleshooting steps:"
-        echo "1. SSH to EC2: ssh -i your-key.pem ec2-user@${{ secrets.EC2_HOST }}"
-        echo "2. Check logs: cd /home/ec2-user/microservices-app && sudo docker-compose logs"
-        echo "3. Check containers: sudo docker-compose ps"
-        echo "4. Manual restart: sudo docker-compose down && sudo docker-compose up -d"
+        echo ""
+        echo "🔧 Troubleshooting steps:"
+        echo "1. SSH into your EC2 instance:"
+        echo "   ssh -i your-key.pem ec2-user@${{ secrets.EC2_HOST }}"
+        echo ""
+        echo "2. Check deployment directory:"
+        echo "   cd /home/ec2-user/microservices-app"
+        echo "   ls -la"
+        echo ""
+        echo "3. Check Docker containers:"
+        echo "   sudo docker-compose ps"
+        echo "   sudo docker-compose logs [service-name]"
+        echo ""
+        echo "4. Manual restart:"
+        echo "   sudo docker-compose down"
+        echo "   sudo docker-compose up -d"
+        echo ""
+        echo "5. Check GitHub SSH key:"
+        echo "   ssh -T git@github.com"
