@@ -26,21 +26,7 @@ jobs:
 
     - name: Test SSH Connection
       run: |
-        ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo 'SSH connection successful'"
-
-    - name: Prepare EC2 Environment
-      run: |
-        ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          # Create app directory if it doesn't exist
-          mkdir -p ${{ env.APP_DIR }}
-          
-          # Stop existing services if running
-          cd ${{ env.APP_DIR }} 2>/dev/null || true
-          if [ -f docker-compose.yml ]; then
-            echo "Stopping existing services..."
-            sudo docker-compose down || true
-          fi
-        EOF
+        ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo '✅ SSH connection successful'"
 
     - name: Deploy Application
       run: |
@@ -48,35 +34,52 @@ jobs:
           set -e  # Exit on any error
           
           echo "📁 Setting up deployment directory..."
+          mkdir -p ${{ env.APP_DIR }}
           cd ${{ env.APP_DIR }}
           
-          # Clean deployment (remove existing files)
-          echo "🧹 Cleaning previous deployment..."
-          rm -rf * .git .gitignore 2>/dev/null || true
-          
-          echo "📥 Cloning repository..."
-          git clone https://github.com/${{ github.repository }}.git .
+          # Check if this is first deployment or update
+          if [ ! -d ".git" ]; then
+            echo "🆕 First deployment - cloning repository..."
+            rm -rf * .[^.]* 2>/dev/null || true  # Clean directory completely
+            git clone https://github.com/${{ github.repository }}.git .
+          else
+            echo "🔄 Updating existing repository..."
+            # Stash any local changes
+            git stash push -m "Auto-stash before deployment" 2>/dev/null || true
+            
+            # Fetch latest changes
+            git fetch origin main
+            
+            # Reset to remote state (removes any local modifications)
+            git reset --hard origin/main
+            
+            # Clean untracked files
+            git clean -fd
+            
+            # Pull latest changes
+            git pull origin main
+          fi
           
           # Verify docker-compose.yml exists
           if [ ! -f docker-compose.yml ]; then
-            echo "❌ ERROR: docker-compose.yml not found in repository root!"
+            echo "❌ ERROR: docker-compose.yml not found!"
             echo "Available files:"
             ls -la
             exit 1
           fi
           
-          echo "✅ Found docker-compose.yml file"
+          echo "✅ Found docker-compose.yml"
           
-          echo "🛑 Stopping any existing containers..."
+          echo "🛑 Stopping existing services..."
           sudo docker-compose down || true
           
-          echo "🧹 Cleaning up Docker resources..."
+          echo "🧹 Cleaning Docker resources..."
           sudo docker system prune -f || true
           
           echo "🔨 Building and starting services..."
           sudo docker-compose up --build -d
           
-          echo "⏰ Waiting for services to start..."
+          echo "⏰ Waiting for services to initialize..."
           sleep 30
           
           echo "📊 Container status:"
@@ -111,13 +114,18 @@ jobs:
             
             # Check if container is running
             if sudo docker-compose ps $service | grep -q "Up"; then
-              # Check health endpoint
-              if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null; then
-                echo "✅ $service is healthy (port $port)"
-                healthy_count=$((healthy_count + 1))
-              else
-                echo "⚠️  $service container running but health check failed (port $port)"
-              fi
+              # Check health endpoint with retry
+              for i in {1..3}; do
+                if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null; then
+                  echo "✅ $service is healthy (port $port)"
+                  healthy_count=$((healthy_count + 1))
+                  break
+                elif [ $i -eq 3 ]; then
+                  echo "⚠️  $service container running but health check failed (port $port)"
+                else
+                  sleep 5
+                fi
+              done
             else
               echo "❌ $service container is not running"
             fi
@@ -126,11 +134,12 @@ jobs:
           echo "=== Summary ==="
           echo "Healthy services: $healthy_count/$total_count"
           
-          if [ $healthy_count -eq $total_count ]; then
-            echo "🎉 All services deployed successfully!"
+          if [ $healthy_count -gt 0 ]; then
+            echo "🎉 Deployment completed!"
           else
-            echo "⚠️  Some services may have issues. Check logs with:"
-            echo "   sudo docker-compose logs [service-name]"
+            echo "⚠️  No services are healthy. Check logs:"
+            sudo docker-compose logs --tail=20
+            exit 1
           fi
           
         EOF
@@ -138,7 +147,7 @@ jobs:
     - name: Show Service URLs
       if: success()
       run: |
-        echo "🌐 Your services are now available at:"
+        echo "🌐 Your services are available at:"
         echo "   • User Service: http://${{ secrets.EC2_HOST }}:3001"
         echo "   • Post Service: http://${{ secrets.EC2_HOST }}:3002"
         echo "   • Comment Service: http://${{ secrets.EC2_HOST }}:3003"
@@ -153,12 +162,12 @@ jobs:
       run: |
         rm -f ~/.ssh/deploy_key
 
-    - name: Failure Notification
+    - name: Failure Troubleshooting
       if: failure()
       run: |
-        echo "❌ Deployment failed! Check the logs above for details."
-        echo "🔍 Common fixes:"
-        echo "   1. Ensure docker-compose.yml exists in repository root"
-        echo "   2. Check GitHub secrets are set correctly"
-        echo "   3. Verify EC2 instance has Docker and Git installed"
-        echo "   4. Confirm security group allows required ports"
+        echo "❌ Deployment failed!"
+        echo "🔍 Troubleshooting steps:"
+        echo "1. SSH to EC2: ssh -i your-key.pem ec2-user@${{ secrets.EC2_HOST }}"
+        echo "2. Check logs: cd /home/ec2-user/microservices-app && sudo docker-compose logs"
+        echo "3. Check containers: sudo docker-compose ps"
+        echo "4. Manual restart: sudo docker-compose down && sudo docker-compose up -d"
