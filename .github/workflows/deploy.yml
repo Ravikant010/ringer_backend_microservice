@@ -2,11 +2,11 @@ name: Deploy Microservices to AWS EC2
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   workflow_dispatch: # Allow manual triggers
 
 env:
-  DEPLOYMENT_PATH: /home/ec2-user/microservices-app
+  APP_DIR: /home/ec2-user/microservices-app
 
 jobs:
   deploy:
@@ -28,106 +28,117 @@ jobs:
       run: |
         ssh -i ~/.ssh/deploy_key -o ConnectTimeout=10 ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} "echo 'SSH connection successful'"
 
-    - name: Stop existing services
+    - name: Prepare EC2 Environment
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd ${{ env.DEPLOYMENT_PATH }} || true
+          # Create app directory if it doesn't exist
+          mkdir -p ${{ env.APP_DIR }}
+          
+          # Stop existing services if running
+          cd ${{ env.APP_DIR }} 2>/dev/null || true
           if [ -f docker-compose.yml ]; then
             echo "Stopping existing services..."
             sudo docker-compose down || true
           fi
         EOF
 
-    - name: Deploy application
+    - name: Deploy Application
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          echo "Starting deployment..."
+          set -e  # Exit on any error
           
-          # Create deployment directory if it doesn't exist
-          mkdir -p ${{ env.DEPLOYMENT_PATH }}
-          cd ${{ env.DEPLOYMENT_PATH }}
+          echo "📁 Setting up deployment directory..."
+          cd ${{ env.APP_DIR }}
           
-          # Clone/update repository
-          if [ -d ".git" ]; then
-            echo "Updating existing repository..."
-            git fetch --all
-            git reset --hard origin/main
-            git pull origin main
-          else
-            echo "Cloning repository..."
-            git clone https://github.com/${{ github.repository }}.git .
+          # Clean deployment (remove existing files)
+          echo "🧹 Cleaning previous deployment..."
+          rm -rf * .git .gitignore 2>/dev/null || true
+          
+          echo "📥 Cloning repository..."
+          git clone https://github.com/${{ github.repository }}.git .
+          
+          # Verify docker-compose.yml exists
+          if [ ! -f docker-compose.yml ]; then
+            echo "❌ ERROR: docker-compose.yml not found in repository root!"
+            echo "Available files:"
+            ls -la
+            exit 1
           fi
           
-          # Set permissions
-          chmod +x scripts/*.sh 2>/dev/null || true
+          echo "✅ Found docker-compose.yml file"
           
-          # Build and start services
-          echo "Building and starting services..."
-          sudo docker-compose build --no-cache
-          sudo docker-compose up -d
+          echo "🛑 Stopping any existing containers..."
+          sudo docker-compose down || true
           
-          # Wait for services to start
-          echo "Waiting for services to start..."
+          echo "🧹 Cleaning up Docker resources..."
+          sudo docker system prune -f || true
+          
+          echo "🔨 Building and starting services..."
+          sudo docker-compose up --build -d
+          
+          echo "⏰ Waiting for services to start..."
           sleep 30
+          
+          echo "📊 Container status:"
+          sudo docker-compose ps
           
         EOF
 
     - name: Health Check Services
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd ${{ env.DEPLOYMENT_PATH }}
+          cd ${{ env.APP_DIR }}
           
-          echo "=== Container Status ==="
-          sudo docker-compose ps
+          echo "=== Health Check Results ==="
           
-          echo "=== Health Checks ==="
+          # Define services and ports
+          declare -A services=(
+            ["user-service"]=3001
+            ["post-service"]=3002
+            ["comment-service"]=3003
+            ["chat-service"]=3004
+            ["media-service"]=3005
+            ["notification-service"]=3006
+            ["analytics-service"]=3007
+            ["search-service"]=3008
+          )
           
-          # Health check function
-          check_service() {
-            local service_name=$1
-            local port=$2
-            local max_retries=5
-            local retry=0
+          healthy_count=0
+          total_count=${#services[@]}
+          
+          for service in "${!services[@]}"; do
+            port=${services[$service]}
             
-            while [ $retry -lt $max_retries ]; do
-              if curl -f -s http://localhost:$port/health > /dev/null; then
-                echo "✅ $service_name is healthy (port $port)"
-                return 0
+            # Check if container is running
+            if sudo docker-compose ps $service | grep -q "Up"; then
+              # Check health endpoint
+              if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null; then
+                echo "✅ $service is healthy (port $port)"
+                healthy_count=$((healthy_count + 1))
               else
-                echo "⏳ $service_name not ready yet (attempt $((retry+1))/$max_retries)"
-                sleep 10
-                retry=$((retry+1))
+                echo "⚠️  $service container running but health check failed (port $port)"
               fi
-            done
-            
-            echo "❌ $service_name failed health check (port $port)"
-            return 1
-          }
+            else
+              echo "❌ $service container is not running"
+            fi
+          done
           
-          # Check all services
-          check_service "user-service" 3001
-          check_service "post-service" 3002
-          check_service "comment-service" 3003
-          check_service "chat-service" 3004
-          check_service "media-service" 3005
-          check_service "notification-service" 3006
-          check_service "analytics-service" 3007
-          check_service "search-service" 3008
+          echo "=== Summary ==="
+          echo "Healthy services: $healthy_count/$total_count"
           
-          echo "=== Container Logs (last 10 lines) ==="
-          sudo docker-compose logs --tail=10
+          if [ $healthy_count -eq $total_count ]; then
+            echo "🎉 All services deployed successfully!"
+          else
+            echo "⚠️  Some services may have issues. Check logs with:"
+            echo "   sudo docker-compose logs [service-name]"
+          fi
           
         EOF
 
-    - name: Post-deployment cleanup
-      if: always()
+    - name: Show Service URLs
+      if: success()
       run: |
-        rm -f ~/.ssh/deploy_key
-
-    - name: Deployment Summary
-      run: |
-        echo "🎉 Deployment completed successfully!"
-        echo "📊 Services deployed:"
+        echo "🌐 Your services are now available at:"
         echo "   • User Service: http://${{ secrets.EC2_HOST }}:3001"
         echo "   • Post Service: http://${{ secrets.EC2_HOST }}:3002"
         echo "   • Comment Service: http://${{ secrets.EC2_HOST }}:3003"
@@ -137,7 +148,17 @@ jobs:
         echo "   • Analytics Service: http://${{ secrets.EC2_HOST }}:3007"
         echo "   • Search Service: http://${{ secrets.EC2_HOST }}:3008"
 
-    - name: Notify on failure
+    - name: Cleanup SSH Key
+      if: always()
+      run: |
+        rm -f ~/.ssh/deploy_key
+
+    - name: Failure Notification
       if: failure()
       run: |
         echo "❌ Deployment failed! Check the logs above for details."
+        echo "🔍 Common fixes:"
+        echo "   1. Ensure docker-compose.yml exists in repository root"
+        echo "   2. Check GitHub secrets are set correctly"
+        echo "   3. Verify EC2 instance has Docker and Git installed"
+        echo "   4. Confirm security group allows required ports"
