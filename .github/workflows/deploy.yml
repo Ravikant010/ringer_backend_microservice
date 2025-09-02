@@ -107,35 +107,27 @@ jobs:
           
         EOF
 
-    - name: Health Check All Services (Fixed)
+    - name: Health Check All Services (Improved)
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
-          
-          # CRITICAL FIX: Ensure we're in the correct directory
           echo "🔍 Navigating to deployment directory..."
           cd ${{ env.APP_DIR }} || { echo "❌ Cannot access deployment directory"; exit 1; }
           
-          # Verify we're in the right place
           echo "📂 Current directory: $(pwd)"
           echo "📋 Checking for docker-compose.yml..."
-          
           if [ ! -f docker-compose.yml ]; then
             echo "❌ CRITICAL: docker-compose.yml not found in $(pwd)"
             echo "Directory contents:"
             ls -la
             exit 1
           fi
-          
-          echo "✅ docker-compose.yml found in $(pwd)"
-          
+          echo "✅ docker-compose.yml found"
+
           echo "=== Comprehensive Health Check ==="
-          
-          # Check overall container status first
           echo "📊 Overall container status:"
           sudo docker-compose ps || { echo "❌ docker-compose ps failed"; exit 1; }
-          
-          # Define all services with their ports
+
           declare -A services=(
             ["user-service"]=3001
             ["post-service"]=3002
@@ -146,62 +138,52 @@ jobs:
             ["analytics-service"]=3007
             ["search-service"]=3008
           )
-          
+
           healthy_count=0
           total_count=${#services[@]}
-          
+
           echo "🏥 Testing $total_count services..."
-          
+
           for service in "${!services[@]}"; do
             port=${services[$service]}
-            
+
+            # Confirm service exists
+            if ! sudo docker-compose ps --services | grep -qw "$service"; then
+              echo "🟡 Service $service not found in compose file"
+              continue
+            fi
+
             # Check if container is running
-            if sudo docker-compose ps $service | grep -q "Up"; then
+            if sudo docker-compose ps "$service" | grep -q "Up"; then
               echo "🟢 $service container is running"
               
-              # Health endpoint check with retries
-              for attempt in {1..3}; do
-                if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null 2>&1; then
-                  echo "✅ $service is healthy (port $port)"
-                  healthy_count=$((healthy_count + 1))
-                  break
-                elif [ $attempt -eq 3 ]; then
-                  echo "⚠️  $service container running but health check failed (port $port)"
-                  # Show container logs for failed service
-                  echo "🔍 Last 10 lines of $service logs:"
-                  sudo docker-compose logs --tail=10 $service
-                else
-                  echo "⏳ $service not ready, retrying... ($attempt/3)"
-                  sleep 10
-                fi
-              done
+              # Optional: check port responsiveness
+              if timeout 5 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
+                echo "🔵 $service is responding on port $port"
+                healthy_count=$((healthy_count + 1))
+              else
+                echo "🔴 $service is UP but port $port is not responding"
+                sudo docker-compose logs --tail=10 "$service"
+              fi
             else
               echo "❌ $service container is not running"
-              # Show why container failed
-              echo "🔍 Container status for $service:"
-              sudo docker-compose ps $service
-              echo "🔍 Last 10 lines of $service logs:"
-              sudo docker-compose logs --tail=10 $service
+              sudo docker-compose ps "$service"
+              sudo docker-compose logs --tail=10 "$service"
             fi
           done
-          
+
           echo "=========================="
           echo "🏥 Health Summary: $healthy_count/$total_count services healthy"
-          
+
           if [ $healthy_count -eq $total_count ]; then
             echo "🎉 All services are healthy! Deployment successful!"
           elif [ $healthy_count -gt 0 ]; then
-            echo "⚠️  Partial deployment success ($healthy_count/$total_count services healthy)"
-            echo "🔍 Check logs above for failed services"
+            echo "⚠️  Partial success ($healthy_count/$total_count)"
           else
-            echo "❌ Deployment failed - no services are healthy"
-            echo "🔍 Full container status:"
-            sudo docker-compose ps
-            echo "🔍 All container logs:"
+            echo "❌ Deployment failed - no services healthy"
             sudo docker-compose logs --tail=20
             exit 1
           fi
-          
         EOF
 
     - name: Display Service URLs

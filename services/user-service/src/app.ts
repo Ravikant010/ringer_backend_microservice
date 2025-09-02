@@ -56,7 +56,7 @@ app.use(morgan('combined'))
 
 app.use('/api/v1/auth', authRoutes)
 app.use('/api/v1/users', userRoutes)
-
+app.get("/test-the-api", (req,res)=>res.send("ok"))
 // 404 handler
 
 
