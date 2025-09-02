@@ -1,4 +1,4 @@
-name: Deploy Microservices to AWS EC2 (SSH)
+name: Deploy Microservices with Docker-Compose
 
 on:
   push:
@@ -10,7 +10,7 @@ env:
 
 jobs:
   deploy:
-    name: Deploy to EC2 via SSH
+    name: Deploy to EC2 using Docker-Compose
     runs-on: ubuntu-latest
     
     steps:
@@ -24,24 +24,26 @@ jobs:
         chmod 600 ~/.ssh/deploy_key
         ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Deploy Application with SSH Authentication
+    - name: Deploy with Docker-Compose
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
           
-          echo "📁 Setting up deployment directory..."
+          echo "🚀 Deploying with Docker-Compose..."
+          
+          # Ensure Docker is running
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          
+          # Setup deployment directory
           mkdir -p ${{ env.APP_DIR }}
           cd ${{ env.APP_DIR }}
           
-          # Set up SSH key for GitHub access on EC2
+          # Setup SSH for GitHub repository access
           mkdir -p ~/.ssh
           echo "${{ secrets.REPO_SSH_KEY }}" > ~/.ssh/github_deploy_key
           chmod 600 ~/.ssh/github_deploy_key
           
-          # Add GitHub to known hosts
-          ssh-keyscan -H github.com >> ~/.ssh/known_hosts 2>/dev/null || true
-          
-          # Create SSH config for GitHub
           cat > ~/.ssh/config << 'SSH_CONFIG'
         Host github.com
           HostName github.com
@@ -51,145 +53,152 @@ jobs:
         SSH_CONFIG
           chmod 600 ~/.ssh/config
           
-          # Test SSH connection to GitHub
-          echo "🔗 Testing GitHub SSH connection..."
-          ssh -T git@github.com || true
-          
-          # Clone or update repository
+          # Clone/update repository
           if [ ! -d ".git" ]; then
-            echo "🆕 First deployment - cloning repository via SSH..."
+            echo "📥 Cloning repository..."
             rm -rf * .[^.]* 2>/dev/null || true
             git clone git@github.com:${{ github.repository }}.git .
           else
-            echo "🔄 Updating existing repository via SSH..."
-            # Update remote URL to use SSH
+            echo "🔄 Updating repository..."
             git remote set-url origin git@github.com:${{ github.repository }}.git
-            
-            # Stash any local changes
-            git stash push -m "Auto-stash before deployment" 2>/dev/null || true
-            
-            # Fetch and reset
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
             git pull origin main
           fi
           
-          # Verify we're in correct directory and files exist
-          echo "📋 Current directory: $(pwd)"
-          echo "📂 Directory contents:"
-          ls -la
-          
           # Verify docker-compose.yml exists
           if [ ! -f docker-compose.yml ]; then
-            echo "❌ CRITICAL ERROR: docker-compose.yml not found!"
-            echo "Available files:"
-            find . -name "*.yml" -o -name "*.yaml" -o -name "docker-compose*" 2>/dev/null
+            echo "❌ docker-compose.yml not found!"
+            ls -la
             exit 1
           fi
           
-          echo "✅ Found docker-compose.yml"
+          echo "✅ docker-compose.yml found"
           
+          # Install Docker Compose if not present
+          if ! command -v docker-compose &> /dev/null; then
+            echo "📦 Installing Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+          fi
+          
+          # Verify Docker Compose version
+          echo "🔧 Docker Compose version:"
+          docker-compose --version
+          
+          # Remove obsolete version warning
+          sed -i '/^version:/d' docker-compose.yml 2>/dev/null || true
+          
+          # Validate docker-compose.yml
+          echo "✅ Validating docker-compose.yml..."
+          docker-compose config >/dev/null
+          
+          # Stop existing services
           echo "🛑 Stopping existing services..."
-          sudo docker-compose down || true
+          docker-compose down --remove-orphans || true
           
+          # Clean Docker system
           echo "🧹 Cleaning Docker resources..."
           sudo docker system prune -f || true
           
-          echo "🔨 Building and starting services..."
-          sudo docker-compose up --build -d
+          # Start services with Docker Compose (exactly like your local command)
+          echo "🔨 Starting services with docker-compose up -d..."
+          docker-compose up --build -d
           
-          echo "⏰ Waiting for services to initialize..."
-          sleep 45
+          echo "⏰ Waiting for services to start..."
+          sleep 60
           
-          echo "📊 Container status:"
-          sudo docker-compose ps
+          # Show container status
+          echo "📊 Docker Compose container status:"
+          docker-compose ps
+          
+          echo "🐳 All running containers:"
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
           
         EOF
 
-    # - name: Health Check All Services (Improved)
-    #   run: |
-    #     ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-    #       set -e
-    #       echo "🔍 Navigating to deployment directory..."
-    #       cd ${{ env.APP_DIR }} || { echo "❌ Cannot access deployment directory"; exit 1; }
+    - name: Health Check with Docker-Compose
+      run: |
+        ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
+          cd ${{ env.APP_DIR }}
           
-    #       echo "📂 Current directory: $(pwd)"
-    #       echo "📋 Checking for docker-compose.yml..."
-    #       if [ ! -f docker-compose.yml ]; then
-    #         echo "❌ CRITICAL: docker-compose.yml not found in $(pwd)"
-    #         echo "Directory contents:"
-    #         ls -la
-    #         exit 1
-    #       fi
-    #       echo "✅ docker-compose.yml found"
-
-    #       echo "=== Comprehensive Health Check ==="
-    #       echo "📊 Overall container status:"
-    #       sudo docker-compose ps || { echo "❌ docker-compose ps failed"; exit 1; }
-
-    #       declare -A services=(
-    #         ["user-service"]=3001
-    #         ["post-service"]=3002
-    #         ["comment-service"]=3003
-    #         ["chat-service"]=3004
-    #         ["media-service"]=3005
-    #         ["notification-service"]=3006
-    #         ["analytics-service"]=3007
-    #         ["search-service"]=3008
-    #       )
-
-    #       healthy_count=0
-    #       total_count=${#services[@]}
-
-    #       echo "🏥 Testing $total_count services..."
-
-    #       for service in "${!services[@]}"; do
-    #         port=${services[$service]}
-
-    #         # Confirm service exists
-    #         if ! sudo docker-compose ps --services | grep -qw "$service"; then
-    #           echo "🟡 Service $service not found in compose file"
-    #           continue
-    #         fi
-
-    #         # Check if container is running
-    #         if sudo docker-compose ps "$service" | grep -q "Up"; then
-    #           echo "🟢 $service container is running"
+          echo "🏥 Docker-Compose Health Check..."
+          
+          # Show compose services status
+          echo "=== Docker-Compose Services ==="
+          docker-compose ps
+          
+          # Define services to check
+          declare -A services=(
+            ["user-service"]=3001
+            ["post-service"]=3002
+            ["comment-service"]=3003
+            ["chat-service"]=3004
+            ["media-service"]=3005
+            ["notification-service"]=3006
+            ["analytics-service"]=3007
+            ["search-service"]=3008
+          )
+          
+          healthy_count=0
+          total_count=${#services[@]}
+          
+          echo "🔍 Testing $total_count services..."
+          
+          for service in "${!services[@]}"; do
+            port=${services[$service]}
+            
+            echo "--- Checking $service ---"
+            
+            # Check if service is running via docker-compose
+            if docker-compose ps $service | grep -q "Up"; then
+              echo "✅ $service is running (docker-compose)"
               
-    #           # Optional: check port responsiveness
-    #           if timeout 5 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
-    #             echo "🔵 $service is responding on port $port"
-    #             healthy_count=$((healthy_count + 1))
-    #           else
-    #             echo "🔴 $service is UP but port $port is not responding"
-    #             sudo docker-compose logs --tail=10 "$service"
-    #           fi
-    #         else
-    #           echo "❌ $service container is not running"
-    #           sudo docker-compose ps "$service"
-    #           sudo docker-compose logs --tail=10 "$service"
-    #         fi
-    #       done
-
-    #       echo "=========================="
-    #       echo "🏥 Health Summary: $healthy_count/$total_count services healthy"
-
-    #       if [ $healthy_count -eq $total_count ]; then
-    #         echo "🎉 All services are healthy! Deployment successful!"
-    #       elif [ $healthy_count -gt 0 ]; then
-    #         echo "⚠️  Partial success ($healthy_count/$total_count)"
-    #       else
-    #         echo "❌ Deployment failed - no services healthy"
-    #         sudo docker-compose logs --tail=20
-    #         exit 1
-    #       fi
-    #     EOF
+              # Test port connectivity
+              if timeout 5 bash -c "echo > /dev/tcp/localhost/$port" 2>/dev/null; then
+                echo "✅ $service responding on port $port"
+                
+                # Try health endpoint
+                if curl -f -s --max-time 5 http://localhost:$port/health >/dev/null 2>&1; then
+                  echo "✅ $service health check passed"
+                  healthy_count=$((healthy_count + 1))
+                else
+                  echo "⚠️ $service running but health endpoint failed"
+                  healthy_count=$((healthy_count + 1))  # Count as healthy if port responds
+                fi
+              else
+                echo "⚠️ $service running but port $port not responding"
+                echo "Service logs:"
+                docker-compose logs --tail=5 $service
+              fi
+            else
+              echo "❌ $service not running"
+              echo "Service logs:"
+              docker-compose logs --tail=10 $service
+            fi
+          done
+          
+          echo "============================="
+          echo "🎯 Health Summary: $healthy_count/$total_count services healthy"
+          
+          if [ $healthy_count -eq $total_count ]; then
+            echo "🎉 All services running with docker-compose!"
+          elif [ $healthy_count -gt 0 ]; then
+            echo "⚠️ Partial success: $healthy_count/$total_count services"
+          else
+            echo "❌ No services healthy - check logs:"
+            docker-compose logs --tail=20
+            exit 1
+          fi
+          
+        EOF
 
     - name: Display Service URLs
       if: success()
       run: |
-        echo "🌐 Your microservices are now live at:"
+        echo "🌐 Your Docker-Compose services are live:"
         echo ""
         echo "   🚀 User Service:         http://${{ secrets.EC2_HOST }}:3001/health"
         echo "   📝 Post Service:         http://${{ secrets.EC2_HOST }}:3002/health"
@@ -205,14 +214,15 @@ jobs:
       run: |
         rm -f ~/.ssh/deploy_key
 
-    - name: Deployment Failure Help
+    - name: Docker-Compose Troubleshooting
       if: failure()
       run: |
-        echo "❌ Deployment failed!"
+        echo "❌ Docker-Compose deployment failed!"
         echo ""
-        echo "🔧 Manual troubleshooting on EC2:"
+        echo "🔧 Troubleshooting commands:"
         echo "1. SSH: ssh -i your-key.pem ec2-user@${{ secrets.EC2_HOST }}"
-        echo "2. Check directory: cd ${{ env.APP_DIR }} && ls -la"
-        echo "3. Check containers: sudo docker-compose ps"
-        echo "4. Check logs: sudo docker-compose logs [service-name]"
-        echo "5. Restart services: sudo docker-compose down && sudo docker-compose up -d"
+        echo "2. Navigate: cd ${{ env.APP_DIR }}"
+        echo "3. Check status: docker-compose ps"
+        echo "4. View logs: docker-compose logs [service-name]"
+        echo "5. Restart: docker-compose down && docker-compose up -d"
+        echo "6. Check version: docker-compose --version"
