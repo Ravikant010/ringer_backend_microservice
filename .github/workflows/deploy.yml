@@ -75,11 +75,16 @@ jobs:
             git pull origin main
           fi
           
+          # Verify we're in correct directory and files exist
+          echo "📋 Current directory: $(pwd)"
+          echo "📂 Directory contents:"
+          ls -la
+          
           # Verify docker-compose.yml exists
           if [ ! -f docker-compose.yml ]; then
-            echo "❌ ERROR: docker-compose.yml not found!"
+            echo "❌ CRITICAL ERROR: docker-compose.yml not found!"
             echo "Available files:"
-            ls -la
+            find . -name "*.yml" -o -name "*.yaml" -o -name "docker-compose*" 2>/dev/null
             exit 1
           fi
           
@@ -95,19 +100,40 @@ jobs:
           sudo docker-compose up --build -d
           
           echo "⏰ Waiting for services to initialize..."
-          sleep 30
+          sleep 45
           
           echo "📊 Container status:"
           sudo docker-compose ps
           
         EOF
 
-    - name: Health Check All Services
+    - name: Health Check All Services (Fixed)
       run: |
         ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USERNAME }}@${{ secrets.EC2_HOST }} << 'EOF'
-          cd ${{ env.APP_DIR }}
+          set -e
+          
+          # CRITICAL FIX: Ensure we're in the correct directory
+          echo "🔍 Navigating to deployment directory..."
+          cd ${{ env.APP_DIR }} || { echo "❌ Cannot access deployment directory"; exit 1; }
+          
+          # Verify we're in the right place
+          echo "📂 Current directory: $(pwd)"
+          echo "📋 Checking for docker-compose.yml..."
+          
+          if [ ! -f docker-compose.yml ]; then
+            echo "❌ CRITICAL: docker-compose.yml not found in $(pwd)"
+            echo "Directory contents:"
+            ls -la
+            exit 1
+          fi
+          
+          echo "✅ docker-compose.yml found in $(pwd)"
           
           echo "=== Comprehensive Health Check ==="
+          
+          # Check overall container status first
+          echo "📊 Overall container status:"
+          sudo docker-compose ps || { echo "❌ docker-compose ps failed"; exit 1; }
           
           # Define all services with their ports
           declare -A services=(
@@ -124,13 +150,15 @@ jobs:
           healthy_count=0
           total_count=${#services[@]}
           
-          echo "Checking $total_count services..."
+          echo "🏥 Testing $total_count services..."
           
           for service in "${!services[@]}"; do
             port=${services[$service]}
             
             # Check if container is running
             if sudo docker-compose ps $service | grep -q "Up"; then
+              echo "🟢 $service container is running"
+              
               # Health endpoint check with retries
               for attempt in {1..3}; do
                 if curl -f -s --max-time 5 http://localhost:$port/health > /dev/null 2>&1; then
@@ -140,34 +168,37 @@ jobs:
                 elif [ $attempt -eq 3 ]; then
                   echo "⚠️  $service container running but health check failed (port $port)"
                   # Show container logs for failed service
-                  echo "Last 5 lines of $service logs:"
-                  sudo docker-compose logs --tail=5 $service
+                  echo "🔍 Last 10 lines of $service logs:"
+                  sudo docker-compose logs --tail=10 $service
                 else
                   echo "⏳ $service not ready, retrying... ($attempt/3)"
-                  sleep 5
+                  sleep 10
                 fi
               done
             else
               echo "❌ $service container is not running"
               # Show why container failed
-              echo "Container status for $service:"
+              echo "🔍 Container status for $service:"
               sudo docker-compose ps $service
-              echo "Last 5 lines of $service logs:"
-              sudo docker-compose logs --tail=5 $service
+              echo "🔍 Last 10 lines of $service logs:"
+              sudo docker-compose logs --tail=10 $service
             fi
           done
           
           echo "=========================="
-          echo "Health Summary: $healthy_count/$total_count services healthy"
+          echo "🏥 Health Summary: $healthy_count/$total_count services healthy"
           
           if [ $healthy_count -eq $total_count ]; then
             echo "🎉 All services are healthy! Deployment successful!"
           elif [ $healthy_count -gt 0 ]; then
             echo "⚠️  Partial deployment success ($healthy_count/$total_count services healthy)"
+            echo "🔍 Check logs above for failed services"
           else
             echo "❌ Deployment failed - no services are healthy"
-            echo "Full container status:"
+            echo "🔍 Full container status:"
             sudo docker-compose ps
+            echo "🔍 All container logs:"
+            sudo docker-compose logs --tail=20
             exit 1
           fi
           
@@ -178,17 +209,14 @@ jobs:
       run: |
         echo "🌐 Your microservices are now live at:"
         echo ""
-        echo "   🚀 User Service:         http://${{ secrets.EC2_HOST }}:3001"
-        echo "   📝 Post Service:         http://${{ secrets.EC2_HOST }}:3002"
-        echo "   💬 Comment Service:      http://${{ secrets.EC2_HOST }}:3003"
-        echo "   💬 Chat Service:         http://${{ secrets.EC2_HOST }}:3004"
-        echo "   📁 Media Service:        http://${{ secrets.EC2_HOST }}:3005"
-        echo "   🔔 Notification Service: http://${{ secrets.EC2_HOST }}:3006"
-        echo "   📊 Analytics Service:    http://${{ secrets.EC2_HOST }}:3007"
-        echo "   🔍 Search Service:       http://${{ secrets.EC2_HOST }}:3008"
-        echo ""
-        echo "Health Check URLs (add /health to any service URL):"
-        echo "   Example: curl http://${{ secrets.EC2_HOST }}:3001/health"
+        echo "   🚀 User Service:         http://${{ secrets.EC2_HOST }}:3001/health"
+        echo "   📝 Post Service:         http://${{ secrets.EC2_HOST }}:3002/health"
+        echo "   💬 Comment Service:      http://${{ secrets.EC2_HOST }}:3003/health"
+        echo "   💬 Chat Service:         http://${{ secrets.EC2_HOST }}:3004/health"
+        echo "   📁 Media Service:        http://${{ secrets.EC2_HOST }}:3005/health"
+        echo "   🔔 Notification Service: http://${{ secrets.EC2_HOST }}:3006/health"
+        echo "   📊 Analytics Service:    http://${{ secrets.EC2_HOST }}:3007/health"
+        echo "   🔍 Search Service:       http://${{ secrets.EC2_HOST }}:3008/health"
 
     - name: Cleanup SSH Keys
       if: always()
@@ -200,21 +228,9 @@ jobs:
       run: |
         echo "❌ Deployment failed!"
         echo ""
-        echo "🔧 Troubleshooting steps:"
-        echo "1. SSH into your EC2 instance:"
-        echo "   ssh -i your-key.pem ec2-user@${{ secrets.EC2_HOST }}"
-        echo ""
-        echo "2. Check deployment directory:"
-        echo "   cd /home/ec2-user/microservices-app"
-        echo "   ls -la"
-        echo ""
-        echo "3. Check Docker containers:"
-        echo "   sudo docker-compose ps"
-        echo "   sudo docker-compose logs [service-name]"
-        echo ""
-        echo "4. Manual restart:"
-        echo "   sudo docker-compose down"
-        echo "   sudo docker-compose up -d"
-        echo ""
-        echo "5. Check GitHub SSH key:"
-        echo "   ssh -T git@github.com"
+        echo "🔧 Manual troubleshooting on EC2:"
+        echo "1. SSH: ssh -i your-key.pem ec2-user@${{ secrets.EC2_HOST }}"
+        echo "2. Check directory: cd ${{ env.APP_DIR }} && ls -la"
+        echo "3. Check containers: sudo docker-compose ps"
+        echo "4. Check logs: sudo docker-compose logs [service-name]"
+        echo "5. Restart services: sudo docker-compose down && sudo docker-compose up -d"
