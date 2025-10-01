@@ -2,7 +2,12 @@ import { Response } from 'express'
 import { postRepository } from '../repositories/post.repository'
 import { CreatePostSchema, ListPostsSchema } from '../validation/post.schema'
 import { AuthenticatedRequest } from '../middleware/auth.middleware'
+import { z } from 'zod';
 
+export const ListFeedSchema = z.object({
+  limit: z.string().optional(),
+  cursor: z.string().optional(),
+});
 class PostController {
   async create(req: AuthenticatedRequest, res: Response) {
     try {
@@ -58,7 +63,30 @@ class PostController {
       res.status(400).json({ success: false, error: 'Failed to unlike', code: 'UNLIKE_FAILED' })
     }
   }
+  async listAll(req: AuthenticatedRequest, res: Response) {
+    try {
+      console.log('listAll called with query:', req.query);
+      const { limit = '20', cursor } = ListFeedSchema.parse(req.query);
+      const limitNum = Number(limit);
+      const page = await postRepository.listAll(limitNum, cursor);
+
+      res.json({
+        success: true,
+        data: page.items,
+        pagination: { nextCursor: page.nextCursor, hasMore: page.hasMore }
+      });
+    } catch (err: any) {
+      res.status(400).json({
+        success: false,
+        error: err.errors ?? err.message ?? 'Invalid query',
+        code: 'LIST_ALL_POSTS_FAILED'
+      });
+    }
+  }
+
+
+
+
 }
 
 export const postController = new PostController()
- 

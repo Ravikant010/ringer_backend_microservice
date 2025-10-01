@@ -30,4 +30,4 @@ async function runMigrations() {
   }
 }
 
-runMigrations()
+export {runMigrations}

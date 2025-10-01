@@ -9,6 +9,7 @@ if (!Bun.env.DATABASE_URL) {
 }
 
 const connectionString = Bun.env.DATABASE_URL
+console.log('Connecting to database at:', connectionString)
 const client = postgres(connectionString, { prepare: false })
 
 export const db = drizzle(client, { schema })

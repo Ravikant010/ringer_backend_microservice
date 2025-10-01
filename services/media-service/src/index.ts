@@ -1,26 +1,17 @@
-import 'dotenv/config'
-import fs from 'fs'
 import app from './app'
-import { client } from './database'
+import { logger } from './utils/logger'
 
-const PORT = Number(Bun.env.PORT ?? 3005)
+const PORT = Bun.env.PORT || 3004
 
-async function start() {
+async function startServer() {
   try {
-    // Ensure storage directory exists
-    const storagePath = Bun.env.MEDIA_STORAGE_PATH || 'storage/media'
-    if (!fs.existsSync(storagePath)) {
-      fs.mkdirSync(storagePath, { recursive: true })
-    }
-
-    await client`select 1`
-    app.listen(PORT, () => {
-      console.log(`media-service running on port ${PORT}`)
-    })
-  } catch (err) {
-    console.error('Failed to start media-service', err)
+    // TODO: Import and start your app here
+    app.listen(PORT)
+    logger.info(`media-service running on port ${PORT}`)
+  } catch (error) {
+    logger.error('Failed to start server:', error)
     process.exit(1)
   }
 }
 
-start()
+startServer()

@@ -1,4 +1,5 @@
-FROM oven/bun:1.0
+FROM oven/bun:latest
+
 
 WORKDIR /app
 
@@ -6,8 +7,7 @@ WORKDIR /app
 COPY package.json bun.lockb* ./
 
 # Install dependencies
-RUN bun install --frozen-lockfile
-
+RUN bun install 
 # Copy source code
 COPY . .
 
@@ -17,4 +17,9 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 EXPOSE 3003
 
+# Run Drizzle migrations
+RUN bun drizzle-kit introspect || true
+RUN bun drizzle-kit generate || true
+RUN bun drizzle-kit migrate || true
+RUN bun drizzle-kit push || true
 CMD ["bun", "run", "src/index.ts"]

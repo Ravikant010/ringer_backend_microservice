@@ -56,8 +56,11 @@ app.use(morgan('combined'))
 
 app.use('/api/v1/auth', authRoutes)
 app.use('/api/v1/users', userRoutes)
-app.get("/test-the-api", (req,res)=>res.send("ok"))
+app.get("/test-the-api", (req, res) => res.send("ok"))
 // 404 handler
+app.get('/health', (req, res) => {
+  res.json({ success: true, service: 'user-service', timestamp: new Date().toISOString() })
+})
 
 
 // Global error handler

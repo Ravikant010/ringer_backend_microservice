@@ -1,13 +1,13 @@
 import app from './app'
-import { checkDatabaseConnection } from './database'
 import { logger } from './utils/logger'
 
 const PORT = Bun.env.PORT || 3006
 
 async function startServer() {
   try {
-await checkDatabaseConnection()
-   app.listen(PORT, ()=>console.log(`comment-service running on port ${PORT}`))
+    // TODO: Import and start your app here
+    app.listen(PORT)
+    logger.info(`comment-service running on port ${PORT}`)
   } catch (error) {
     logger.error('Failed to start server:', error)
     process.exit(1)

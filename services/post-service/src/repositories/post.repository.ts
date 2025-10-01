@@ -3,7 +3,7 @@ import { db } from '../database'
 import { posts, postLikes } from '../database/schema'
 
 export class PostRepository {
-  async create(authorId: string, data: { content: string; mediaUrl?: string; visibility?: 'public'|'followers'|'private' }) {
+  async create(authorId: string, data: { content: string; mediaUrl?: string; visibility?: 'public' | 'followers' | 'private' }) {
     const [row] = await db.insert(posts).values({
       authorId, content: data.content, mediaUrl: data.mediaUrl, visibility: (data.visibility ?? 'public') as any,
     }).returning()
@@ -45,6 +45,26 @@ export class PostRepository {
     await db.delete(postLikes).where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)))
     return { success: true }
   }
+
+  async listAll(limit: number, cursor?: string) {
+    // Cursor-based pagination on createdAt and id for stable results
+    const where = cursor ? lt(posts.createdAt, new Date(cursor)) : undefined
+
+    const rows = await db.select().from(posts)
+      .where(where as any)
+      .orderBy(desc(posts.createdAt), desc(posts.id))
+      .limit(limit + 1) // get extra to check for more
+
+    const hasMore = rows.length > limit
+    const items = hasMore ? rows.slice(0, limit) : rows
+    // Next cursor is createdAt of last item, converted to ISO string for client
+    const nextCursor = hasMore ? items[items.length - 1].createdAt.toISOString() : undefined
+
+    return { items, nextCursor, hasMore }
+  }
+
+
+
 }
 
 export const postRepository = new PostRepository()
