@@ -35,7 +35,7 @@ export class UserController {
   async updateProfile(req: AuthenticatedRequest, res: Response) {
     try {
       const validatedData = updateProfileSchema.parse(req.body)
-      
+
       const updatedUser = await userService.updateUserProfile(
         req.user.userId,
         validatedData
@@ -68,10 +68,10 @@ export class UserController {
       })
     } catch (error: any) {
       console.error('Follow user error:', error)
-      
+
       const statusCode = error.message.includes('Cannot follow yourself') ||
-                         error.message.includes('Already following') ? 400 : 404
-      
+        error.message.includes('Already following') ? 400 : 404
+
       res.status(statusCode).json({
         success: false,
         error: error.message || 'Failed to follow user',
@@ -165,6 +165,8 @@ export class UserController {
       })
     }
   }
+
+
 }
 
 export const userController = new UserController()

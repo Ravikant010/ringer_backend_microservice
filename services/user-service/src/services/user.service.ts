@@ -1,12 +1,12 @@
-import { eq, and, or, ilike, desc, count } from 'drizzle-orm'
+import { eq, and, or, ilike, desc, count, inArray, sql } from 'drizzle-orm'
 import { db } from '../database'
-import { 
-  users, 
-  userFollows, 
-  userSessions, 
+import {
+  users,
+  userFollows,
+  userSessions,
   emailVerificationTokens,
   passwordResetTokens,
-  User 
+  User
 } from '../database/schema'
 import { passwordService } from '../utils/password'
 import { jwtService } from '../utils/jwt'
@@ -97,8 +97,8 @@ export class UserService {
 
     // Update last seen and online status
     await db.update(users)
-      .set({ 
-        isOnline: true, 
+      .set({
+        isOnline: true,
         lastSeen: new Date(),
         updatedAt: new Date()
       })
@@ -138,8 +138,8 @@ export class UserService {
 
     // Update user offline status
     await db.update(users)
-      .set({ 
-        isOnline: false, 
+      .set({
+        isOnline: false,
         lastSeen: new Date(),
         updatedAt: new Date()
       })
@@ -176,7 +176,7 @@ export class UserService {
 
     // Update refresh token in database
     await db.update(userSessions)
-      .set({ 
+      .set({
         refreshToken: newTokens.refreshToken,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
       })
@@ -226,7 +226,7 @@ export class UserService {
           eq(userFollows.followingId, userId)
         ))
         .limit(1)
-      
+
       isFollowing = !!followRelation
     }
 
@@ -387,7 +387,7 @@ export class UserService {
 
     // Update password
     await db.update(users)
-      .set({ 
+      .set({
         passwordHash: newPasswordHash,
         updatedAt: new Date()
       })
@@ -399,6 +399,55 @@ export class UserService {
 
     return { success: true, message: 'Password changed successfully' }
   }
+
+  async getUsersBatch(userIds: string[]) {
+    // Normalize and short-circuit
+    const ids = Array.from(new Set(userIds)).filter(Boolean);
+    if (ids.length === 0) return [];
+
+    // Chunk to stay well under Postgres' parameter limit
+    const CHUNK_SIZE = 1000; // adjust as needed
+    const rows: Array<{
+      id: string;
+      username: string;
+      firstName: string | null;
+      lastName: string | null;
+      avatar: string | null;
+      bio: string | null;
+      isVerified: boolean;
+      isOnline: boolean;
+      lastSeen: Date | null;
+    }> = [];
+
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      const slice = ids.slice(i, i + CHUNK_SIZE);
+
+      // IMPORTANT: do not shadow the `users` table symbol; use a different local name
+      const chunkRows = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          avatar: users.avatar,
+          bio: users.bio,
+          isVerified: sql<boolean>`coalesce(${users.isVerified}, false)`.as('isVerified'),
+          isOnline: sql<boolean>`coalesce(${users.isOnline}, false)`.as('isOnline'),
+          lastSeen: users.lastSeen,
+        })
+        .from(users)
+        .where(and(inArray(users.id, slice), eq(users.isActive, true)));
+
+      rows.push(...chunkRows);
+    }
+
+    // Preserve original input order; SQL order is undefined without ORDER BY
+    const byId = new Map(rows.map((u) => [u.id, u]));
+    return userIds
+      .map((id) => byId.get(id))
+      .filter((u): u is NonNullable<typeof u> => Boolean(u));
+  }
+
 }
 
 export const userService = new UserService()
