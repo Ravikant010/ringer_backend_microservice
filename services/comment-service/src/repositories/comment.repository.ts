@@ -1,72 +1,216 @@
-import { and, desc, eq, isNull, lt } from 'drizzle-orm'  // [3]
-import { db } from '../database'
-import { comments, commentLikes } from '../database/schema'
+import { eq, and, desc, sql, lt } from 'drizzle-orm';
+import { db } from '../database';
+import { comments, commentLikes } from '../database/schema';
+
+import { TOPICS, CommentCreatedEvent, CommentDeletedEvent, CommentLikedEvent, CommentUnlikedEvent, PostCommentCountChangedEvent } from "../events/types"
+import { kafkaService } from '../events/kafka.service';
+
+function encodeCursor(createdAt: Date, id: string): string {
+  return `${createdAt.toISOString()}_${id}`;
+}
+
+function decodeCursor(cursor?: string): { createdAt: Date; id: string } | null {
+  if (!cursor) return null;
+  const i = cursor.lastIndexOf('_');
+  if (i <= 0) return null;
+  const ts = cursor.slice(0, i);
+  const id = cursor.slice(i + 1);
+  const createdAt = new Date(ts);
+  if (Number.isNaN(createdAt.getTime()) || !id) return null;
+  return { createdAt, id };
+}
 
 export class CommentRepository {
-  async create(authorId: string, data: { postId: string; content: string; parentId?: string }) {
-    if (data.parentId) {
-      const [parent] = await db.select().from(comments).where(eq(comments.id, data.parentId)).limit(1)
-      if (!parent || parent.postId !== data.postId) {
-        throw new Error('Parent comment not found or mismatched post')
-      }
-    }
-    const [row] = await db.insert(comments).values({
+  async create(
+    userId: string,
+    data: { postId: string; content: string; parentId?: string }
+  ) {
+    // Insert comment
+    const [comment] = await db.insert(comments)
+      .values({
+        postId: data.postId,
+        userId,
+        content: data.content,
+        parentCommentId: data.parentId,
+      })
+      .returning();
+
+    // Publish comment created event
+    const commentEvent: CommentCreatedEvent = {
+      eventType: 'comment.created',
+      commentId: comment.id,
       postId: data.postId,
-      authorId,
-      parentId: data.parentId,
+      userId,
       content: data.content,
-    }).returning()
-    return row
+      parentCommentId: data.parentId,
+      timestamp: new Date().toISOString(),
+    };
+    await kafkaService.publishEvent(TOPICS.COMMENT_CREATED, commentEvent);
+
+    // Publish post count change event (post-service will consume this)
+    const countEvent: PostCommentCountChangedEvent = {
+      eventType: 'post.comment_count.changed',
+      postId: data.postId,
+      delta: 1,
+      timestamp: new Date().toISOString(),
+    };
+    await kafkaService.publishEvent(TOPICS.POST_COMMENT_COUNT_CHANGED, countEvent);
+
+    return comment;
   }
 
   async getById(id: string) {
-    const rows = await db.query.comments.findMany({
-      where: (c, { eq }) => eq(c.id, id),
-      limit: 1,
-      with: { likes: false },
-    })
-    return rows ?? null
+    const [comment] = await db.select()
+      .from(comments)
+      .where(eq(comments.id, id))
+      .limit(1);
+    return comment ?? null;
   }
 
-  async listByPost(postId: string, limit: number, cursor?: string) {
-    const base = eq(comments.postId, postId)
-    const rootOnly = isNull(comments.parentId)
-    const where = cursor ? and(base, rootOnly, lt(comments.id, cursor)) : and(base, rootOnly)
-    const rows = await db.select().from(comments)
-      .where(where as any)
-      .orderBy(desc(comments.createdAt), desc(comments.id))
-      .limit(limit + 1)
-    const hasMore = rows.length > limit
-    const items = hasMore ? rows.slice(0, limit) : rows
-    const nextCursor = hasMore ? items[items.length - 1].id : undefined
-    return { items, nextCursor, hasMore }
+  async listByPost(postId: string, limit: number = 20, cursor?: string) {
+    const cur = decodeCursor(cursor);
+
+    let query = db.select()
+      .from(comments)
+      .where(and(
+        eq(comments.postId, postId),
+        eq(comments.isDeleted, false),
+        cur ? lt(comments.createdAt, cur.createdAt) : undefined
+      ))
+      .orderBy(desc(comments.createdAt))
+      .limit(limit + 1);
+
+    const items = await query;
+    const hasMore = items.length > limit;
+    const results = hasMore ? items.slice(0, limit) : items;
+    const nextCursor = hasMore && results.length > 0
+      ? encodeCursor(results[results.length - 1].createdAt, results[results.length - 1].id)
+      : undefined;
+
+    return { items: results, nextCursor, hasMore };
   }
 
-  async listReplies(parentId: string, limit: number, cursor?: string) {
-    const where = cursor ? and(eq(comments.parentId, parentId), lt(comments.id, cursor)) : eq(comments.parentId, parentId)
-    const rows = await db.select().from(comments)
-      .where(where as any)
-      .orderBy(desc(comments.createdAt), desc(comments.id))
-      .limit(limit + 1)
-    const hasMore = rows.length > limit
-    const items = hasMore ? rows.slice(0, limit) : rows
-    const nextCursor = hasMore ? items[items.length - 1].id : undefined
-    return { items, nextCursor, hasMore }
+  async listReplies(parentCommentId: string, limit: number = 20, cursor?: string) {
+    const cur = decodeCursor(cursor);
+
+    let query = db.select()
+      .from(comments)
+      .where(and(
+        eq(comments.parentCommentId, parentCommentId),
+        eq(comments.isDeleted, false),
+        cur ? lt(comments.createdAt, cur.createdAt) : undefined
+      ))
+      .orderBy(desc(comments.createdAt))
+      .limit(limit + 1);
+
+    const items = await query;
+    const hasMore = items.length > limit;
+    const results = hasMore ? items.slice(0, limit) : items;
+    const nextCursor = hasMore && results.length > 0
+      ? encodeCursor(results[results.length - 1].createdAt, results[results.length - 1].id)
+      : undefined;
+
+    return { items: results, nextCursor, hasMore };
+  }
+
+  async delete(id: string, userId: string) {
+    const comment = await this.getById(id);
+    if (!comment) throw new Error('Comment not found');
+    if (comment.userId !== userId) throw new Error('Unauthorized');
+
+    // Soft delete
+    const [deleted] = await db.update(comments)
+      .set({ isDeleted: true })
+      .where(eq(comments.id, id))
+      .returning();
+
+    if (deleted) {
+      // Publish delete event
+      const deleteEvent: CommentDeletedEvent = {
+        eventType: 'comment.deleted',
+        commentId: id,
+        postId: comment.postId,
+        userId,
+        timestamp: new Date().toISOString(),
+      };
+      await kafkaService.publishEvent(TOPICS.COMMENT_DELETED, deleteEvent);
+
+      // Decrement post comment count
+      const countEvent: PostCommentCountChangedEvent = {
+        eventType: 'post.comment_count.changed',
+        postId: comment.postId,
+        delta: -1,
+        timestamp: new Date().toISOString(),
+      };
+      await kafkaService.publishEvent(TOPICS.POST_COMMENT_COUNT_CHANGED, countEvent);
+    }
+
+    return deleted ?? null;
   }
 
   async like(commentId: string, userId: string) {
     try {
-      await db.insert(commentLikes).values({ commentId, userId })
-    } catch {
-      // unique conflict -> idempotent
+      const comment = await this.getById(commentId);
+      if (!comment) throw new Error('Comment not found');
+
+      // Insert like
+      await db.insert(commentLikes).values({ commentId, userId });
+
+      // Increment like count
+      await db.update(comments)
+        .set({ likeCount: sql`${comments.likeCount} + 1` })
+        .where(eq(comments.id, commentId));
+
+      // Publish event
+      const event: CommentLikedEvent = {
+        eventType: 'comment.liked',
+        commentId,
+        postId: comment.postId,
+        userId,
+        timestamp: new Date().toISOString(),
+      };
+      await kafkaService.publishEvent(TOPICS.COMMENT_LIKED, event);
+
+      return { success: true, alreadyLiked: false };
+    } catch (error: any) {
+      if (error.code === '23505') { // Unique constraint violation
+        return { success: true, alreadyLiked: true };
+      }
+      throw error;
     }
-    return { success: true }
   }
 
   async unlike(commentId: string, userId: string) {
-    await db.delete(commentLikes).where(and(eq(commentLikes.commentId, commentId), eq(commentLikes.userId, userId)))
-    return { success: true }
+    const comment = await this.getById(commentId);
+    if (!comment) throw new Error('Comment not found');
+
+    // Delete the like
+    const result = await db.delete(commentLikes)
+      .where(and(
+        eq(commentLikes.commentId, commentId),
+        eq(commentLikes.userId, userId)
+      ))
+      .returning();
+
+    // Only decrement and publish if like existed
+    if (result.length > 0) {
+      await db.update(comments)
+        .set({ likeCount: sql`GREATEST(${comments.likeCount} - 1, 0)` })
+        .where(eq(comments.id, commentId));
+
+      // Publish event
+      const event: CommentUnlikedEvent = {
+        eventType: 'comment.unliked',
+        commentId,
+        postId: comment.postId,
+        userId,
+        timestamp: new Date().toISOString(),
+      };
+      await kafkaService.publishEvent(TOPICS.COMMENT_UNLIKED, event);
+    }
+
+    return { success: true, wasLiked: result.length > 0 };
   }
 }
 
-export const commentRepository = new CommentRepository()
+export const commentRepository = new CommentRepository();

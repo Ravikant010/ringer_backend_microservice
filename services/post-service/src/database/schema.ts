@@ -1,60 +1,55 @@
 import {
-  pgTable, varchar, text, timestamp, uuid, integer, boolean, pgEnum, index, uniqueIndex
+  pgTable, text, timestamp, uuid, integer, boolean,
+  pgEnum, index, primaryKey
 } from 'drizzle-orm/pg-core'
-import { sql } from 'drizzle-orm'
 
-// Enums
+// ===== ENUMS =====
 export const postVisibilityEnum = pgEnum('post_visibility', ['public', 'followers', 'private'])
 
-// Tables
+// ===== POSTS TABLE =====
 export const posts = pgTable(
   'posts',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    authorId: uuid('author_id').notNull(), // references user-service users.id (remote)
+    authorId: uuid('author_id').notNull(),
     content: text('content').notNull(),
-    mediaUrl: varchar('media_url', { length: 2048 }), // optional attachment handled by media-service
     visibility: postVisibilityEnum('visibility').notNull().default('public'),
-    likeCount: integer('like_count').notNull().default(0), // denormalized counter (updated async or on read)
+    likeCount: integer('like_count').notNull().default(0),
     commentCount: integer('comment_count').notNull().default(0),
     isDeleted: boolean('is_deleted').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => {
-    return {
-      byAuthorCreatedAt: index('idx_posts_author_created_at').on(table.authorId, table.createdAt),
-      byCreatedAt: index('idx_posts_created_at').on(table.createdAt),
-      byVisibility: index('idx_posts_visibility').on(table.visibility),
-    }
-  }
+  (table) => ({
+    byAuthorCreatedAt: index('idx_posts_author_created').on(table.authorId, table.createdAt),
+    byCreatedAt: index('idx_posts_created').on(table.createdAt),
+  })
 )
 
+// ===== POST LIKES TABLE =====
 export const postLikes = pgTable(
   'post_likes',
   {
-    postId: uuid('post_id').notNull(), // references posts.id
-    userId: uuid('user_id').notNull(), // references users.id (remote)
+    postId: uuid('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    pk: uniqueIndex('ux_post_likes_post_user').on(table.postId, table.userId),
+    pk: primaryKey({ columns: [table.postId, table.userId] }),
     byUser: index('idx_post_likes_user').on(table.userId),
     byPost: index('idx_post_likes_post').on(table.postId),
   })
 )
 
-// Optional: bookmarks (for later)
-export const postBookmarks = pgTable(
-  'post_bookmarks',
-  {
-    postId: uuid('post_id').notNull(),
-    userId: uuid('user_id').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    pk: uniqueIndex('ux_post_bookmarks_post_user').on(table.postId, table.userId),
-    byUser: index('idx_post_bookmarks_user').on(table.userId),
-    byPost: index('idx_post_bookmarks_post').on(table.postId),
-  })
-)
+// ===== TYPE EXPORTS =====
+
+// Post types
+export type Post = typeof posts.$inferSelect
+export type NewPost = typeof posts.$inferInsert
+
+// Post Like types
+export type PostLike = typeof postLikes.$inferSelect
+export type NewPostLike = typeof postLikes.$inferInsert
+
+// Visibility enum type
+export type PostVisibility = 'public' | 'followers' | 'private'

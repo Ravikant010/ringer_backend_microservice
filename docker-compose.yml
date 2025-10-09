@@ -1,4 +1,4 @@
-version: '3.8'
+# Modern Docker Compose - No version field needed (deprecated in v2+)
 
 networks:
   social-platform:
@@ -16,15 +16,15 @@ services:
       POSTGRES_USER: user_service_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
     ports:
-      - "5440:5432"  # ✅ CHANGED FROM "5432:5432" TO AVOID CONFLICT
+      - "5440:5432"
     volumes:
       - user_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U user_service_user -d user_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -42,10 +42,10 @@ services:
       - post_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U post_service_user -d post_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -63,10 +63,10 @@ services:
       - comment_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U comment_service_user -d comment_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -84,10 +84,10 @@ services:
       - chat_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chat_service_user -d chat_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -105,10 +105,10 @@ services:
       - media_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U media_service_user -d media_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -126,10 +126,10 @@ services:
       - notification_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U notification_service_user -d notification_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -147,10 +147,10 @@ services:
       - analytics_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U analytics_service_user -d analytics_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -168,10 +168,10 @@ services:
       - search_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U search_service_user -d search_service_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     networks:
       - social-platform
     restart: unless-stopped
@@ -187,13 +187,18 @@ services:
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
       start_period: 10s
     networks:
       - social-platform
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
@@ -214,8 +219,66 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 60s
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # ===== EVENT BROKER =====
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --memory 1G
+    ports:
+      - "18081:18081"
+      - "18082:18082"
+      - "19092:19092"
+      - "19644:9644"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    networks:
+      - social-platform
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: redpanda-console
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    depends_on:
+      redpanda:
+        condition: service_healthy
     networks:
       - social-platform
     restart: unless-stopped
@@ -237,10 +300,15 @@ services:
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - SERVICE_NAME=user-service
       - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=user-service
+      - LOG_LEVEL=info
     depends_on:
       user-db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
     networks:
       - social-platform
@@ -264,12 +332,22 @@ services:
       - DATABASE_URL=postgresql://post_service_user:${POSTGRES_PASSWORD:-peter435}@post-db:5432/post_service_db
       - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=post-service
+      - USER_SERVICE_URL=http://user-service:3001
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=post-service
+      - KAFKA_GROUP_ID=post-service-group
+      - LOG_LEVEL=info
     depends_on:
       post-db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      user-service:
+        condition: service_started
     networks:
       - social-platform
     restart: unless-stopped
@@ -285,18 +363,28 @@ services:
       dockerfile: Dockerfile
     container_name: comment-service
     ports:
-      - "3003:3003"
+      - "3006:3006"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3003
+      - PORT=3006
       - DATABASE_URL=postgresql://comment_service_user:${POSTGRES_PASSWORD:-peter435}@comment-db:5432/comment_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=comment-service
+      - USER_SERVICE_URL=http://user-service:3001
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
       - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=comment-service
+      - LOG_LEVEL=info
     depends_on:
       comment-db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      user-service:
+        condition: service_started
     networks:
       - social-platform
     restart: unless-stopped
@@ -317,8 +405,10 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3004
       - DATABASE_URL=postgresql://chat_service_user:${POSTGRES_PASSWORD:-peter435}@chat-db:5432/chat_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=chat-service
       - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
     depends_on:
       chat-db:
         condition: service_healthy
@@ -344,10 +434,12 @@ services:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3005
       - DATABASE_URL=postgresql://media_service_user:${POSTGRES_PASSWORD:-peter435}@media-db:5432/media_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - MEDIA_STORAGE_PATH=/app/storage
       - MEDIA_BASE_URL=http://localhost:3005/files
       - SERVICE_NAME=media-service
       - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
     volumes:
       - media_storage:/app/storage
     depends_on:
@@ -370,17 +462,24 @@ services:
       dockerfile: Dockerfile
     container_name: notification-service
     ports:
-      - "3006:3006"
+      - "3007:3007"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3006
+      - PORT=3007
       - DATABASE_URL=postgresql://notification_service_user:${POSTGRES_PASSWORD:-peter435}@notification-db:5432/notification_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=notification-service
       - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=notification-service
+      - KAFKA_GROUP_ID=notification-group
+      - LOG_LEVEL=info
     depends_on:
       notification-db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
     networks:
       - social-platform
@@ -397,17 +496,24 @@ services:
       dockerfile: Dockerfile
     container_name: analytics-service
     ports:
-      - "3007:3007"
+      - "3008:3008"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3007
+      - PORT=3008
       - DATABASE_URL=postgresql://analytics_service_user:${POSTGRES_PASSWORD:-peter435}@analytics-db:5432/analytics_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=analytics-service
       - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=analytics-service
+      - KAFKA_GROUP_ID=analytics-group
+      - LOG_LEVEL=info
     depends_on:
       analytics-db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
     networks:
       - social-platform
@@ -424,20 +530,27 @@ services:
       dockerfile: Dockerfile
     container_name: search-service
     ports:
-      - "3008:3008"
+      - "3009:3009"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3008
+      - PORT=3009
       - DATABASE_URL=postgresql://search_service_user:${POSTGRES_PASSWORD:-peter435}@search-db:5432/search_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=search-service
       - REDIS_URL=redis://redis:6379
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=search-service
+      - KAFKA_GROUP_ID=search-group
+      - LOG_LEVEL=info
     depends_on:
       search-db:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
     networks:
       - social-platform
@@ -468,6 +581,11 @@ services:
       - monitoring
       - social-platform
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
 
   grafana:
     image: grafana/grafana:latest
@@ -486,6 +604,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
 
   # ===== API GATEWAY (NGINX) =====
   nginx:
@@ -509,31 +632,24 @@ services:
     networks:
       - social-platform
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
 
 volumes:
   user_db_data:
-    driver: local
   post_db_data:
-    driver: local
   comment_db_data:
-    driver: local
   chat_db_data:
-    driver: local
   media_db_data:
-    driver: local
   notification_db_data:
-    driver: local
   analytics_db_data:
-    driver: local
   search_db_data:
-    driver: local
   redis_data:
-    driver: local
   elasticsearch_data:
-    driver: local
   prometheus_data:
-    driver: local
   grafana_data:
-    driver: local
   media_storage:
-    driver: local
+  redpanda_data:

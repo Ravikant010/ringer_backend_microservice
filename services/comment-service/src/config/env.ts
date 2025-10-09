@@ -31,7 +31,6 @@
 //   kafkaBrokers: Bun.env.KAFKA_BROKERS || 'redpanda:9092',
 //   kafkaClientId: Bun.env.KAFKA_CLIENT_ID || 'post-service'
 // };
-
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -54,9 +53,9 @@ if (missingVars.length > 0) {
 
 export const env = {
   // Server
-  port: parseInt(Bun.env.PORT || '3002', 10),
+  port: parseInt(Bun.env.PORT || '3006', 10),
   nodeEnv: Bun.env.NODE_ENV || 'development',
-  serviceName: Bun.env.SERVICE_NAME || 'post-service',
+  serviceName: Bun.env.SERVICE_NAME || 'comment-service',
 
   // Database
   databaseUrl: Bun.env.DATABASE_URL!,
@@ -73,17 +72,12 @@ export const env = {
 
   // Kafka
   kafkaBrokers: Bun.env.KAFKA_BROKERS || 'localhost:9092',
-  kafkaClientId: Bun.env.KAFKA_CLIENT_ID || 'post-service',
-  kafkaGroupId: Bun.env.KAFKA_GROUP_ID || 'post-service-group',
+  kafkaClientId: Bun.env.KAFKA_CLIENT_ID || 'comment-service',
 
   // Logging
   logLevel: Bun.env.LOG_LEVEL || 'info',
 
-  // Rate Limiting
-  rateLimitPosts: parseInt(Bun.env.RATE_LIMIT_POSTS || '10', 10),
-  rateLimitWindow: parseInt(Bun.env.RATE_LIMIT_WINDOW || '3600000', 10),
-
   // Pagination
   defaultPageLimit: parseInt(Bun.env.DEFAULT_PAGE_LIMIT || '20', 10),
-  maxPageLimit: parseInt(Bun.env.MAX_PAGE_LIMIT || '100', 10),
+  maxPageLimit: parseInt(Bun.env.MAX_PAGE_LIMIT || '50', 10),
 };
