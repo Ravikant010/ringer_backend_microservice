@@ -6,42 +6,18 @@ import { userService } from '../services/user.service'
 
 const router = Router()
 
+// ✅ STEP 1: Put specific routes BEFORE wildcard routes
 // Public routes (with optional authentication)
 router.get('/test', (req, res) => res.send("User Service is running"))
-router.get('/profile/:userId', optionalAuth, userController.getProfile)
 router.get('/search', userController.searchUsers)
 
-// Protected routes
-router.put('/profile', authenticateToken, userController.updateProfile)
-router.post('/follow/:userId', authenticateToken, userController.followUser)
-router.delete('/follow/:userId', authenticateToken, userController.unfollowUser)
-router.get('/:userId/followers', optionalAuth, userController.getFollowers)
-router.get('/:userId/following', optionalAuth, userController.getFollowing)
-const BatchSchema = z.object({
-  ids: z.array(z.string().min(1)).nonempty().max(10000),
-});
-
-router.post('/batch', async (req, res) => {
-  try {
-    const { ids } = BatchSchema.parse(req.body);
-    const users = await userService.getUsersBatch(ids); // preserves input order
-    res.status(200).json({ users });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid body', details: err.issues });
-    }
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-
+// ✅ /me route MUST come BEFORE /:userId
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const userId = (req as any).user?.userId as string | undefined;
     console.log('Authenticated userId:', userId);
     if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-    // Minimal profile for convenience; or return only { id }
     const profile = await userService.getUserProfile(userId);
     return res.json({
       success: true,
@@ -60,5 +36,32 @@ router.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
+// ✅ Now the wildcard routes
+router.get('/profile/:userId', optionalAuth, userController.getProfile)
+router.get('/:userId', optionalAuth, userController.getProfile) // Direct user lookup
+
+// Protected routes
+router.put('/profile', authenticateToken, userController.updateProfile)
+router.post('/follow/:userId', authenticateToken, userController.followUser)
+router.delete('/follow/:userId', authenticateToken, userController.unfollowUser)
+router.get('/:userId/followers', optionalAuth, userController.getFollowers)
+router.get('/:userId/following', optionalAuth, userController.getFollowing)
+
+const BatchSchema = z.object({
+  ids: z.array(z.string().min(1)).nonempty().max(10000),
+});
+
+router.post('/batch', async (req, res) => {
+  try {
+    const { ids } = BatchSchema.parse(req.body);
+    const users = await userService.getUsersBatch(ids);
+    res.status(200).json({ users });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid body', details: err.issues });
+    }
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 export default router

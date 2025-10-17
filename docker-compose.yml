@@ -71,6 +71,50 @@ services:
       - social-platform
     restart: unless-stopped
 
+  # ===== NEW: SOCIAL SERVICE DATABASE =====
+  social-db:
+    image: postgres:15-alpine
+    container_name: social-db
+    environment:
+      POSTGRES_DB: social_service_db
+      POSTGRES_USER: social_service_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
+    ports:
+      - "5441:5432"
+    volumes:
+      - social_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social_service_user -d social_service_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - social-platform
+    restart: unless-stopped
+
+  # ===== NEW: MESSAGE SERVICE DATABASE =====
+  message-db:
+    image: postgres:15-alpine
+    container_name: message-db
+    environment:
+      POSTGRES_DB: message_service_db
+      POSTGRES_USER: message_service_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-peter435}
+    ports:
+      - "5442:5432"
+    volumes:
+      - message_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U message_service_user -d message_service_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - social-platform
+    restart: unless-stopped
+
   chat-db:
     image: postgres:15-alpine
     container_name: chat-db
@@ -394,16 +438,92 @@ services:
           memory: 512M
           cpus: '0.5'
 
+  # ===== NEW: SOCIAL SERVICE (Followers/Following) =====
+  social-service:
+    build:
+      context: ./services/social-service
+      dockerfile: Dockerfile
+    container_name: social-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3004
+      - DATABASE_URL=postgresql://social_service_user:${POSTGRES_PASSWORD:-peter435}@social-db:5432/social_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
+      - SERVICE_NAME=social-service
+      - USER_SERVICE_URL=http://user-service:3001
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=social-service
+      - LOG_LEVEL=info
+    depends_on:
+      social-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # ===== NEW: MESSAGE SERVICE (Direct Messaging) =====
+  message-service:
+    build:
+      context: ./services/message-service
+      dockerfile: Dockerfile
+    container_name: message-service
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3008
+      - DATABASE_URL=postgresql://message_service_user:${POSTGRES_PASSWORD:-peter435}@message-db:5432/message_service_db
+      - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
+      - SERVICE_NAME=message-service
+      - USER_SERVICE_URL=http://user-service:3001
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_CLIENT_ID=message-service
+      - LOG_LEVEL=info
+    depends_on:
+      message-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - social-platform
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
   chat-service:
     build:
       context: ./services/chat-service
       dockerfile: Dockerfile
     container_name: chat-service
     ports:
-      - "3004:3004"
+      - "3003:3003"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3004
+      - PORT=3003
       - DATABASE_URL=postgresql://chat_service_user:${POSTGRES_PASSWORD:-peter435}@chat-db:5432/chat_service_db
       - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=chat-service
@@ -496,10 +616,10 @@ services:
       dockerfile: Dockerfile
     container_name: analytics-service
     ports:
-      - "3008:3008"
+      - "3009:3009"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3008
+      - PORT=3009
       - DATABASE_URL=postgresql://analytics_service_user:${POSTGRES_PASSWORD:-peter435}@analytics-db:5432/analytics_service_db
       - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=analytics-service
@@ -530,10 +650,10 @@ services:
       dockerfile: Dockerfile
     container_name: search-service
     ports:
-      - "3009:3009"
+      - "3010:3010"
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PORT=3009
+      - PORT=3010
       - DATABASE_URL=postgresql://search_service_user:${POSTGRES_PASSWORD:-peter435}@search-db:5432/search_service_db
       - JWT_SECRET=${JWT_SECRET:-1234567890abcdef1234567890abcdef}
       - SERVICE_NAME=search-service
@@ -624,6 +744,8 @@ services:
       - user-service
       - post-service
       - comment-service
+      - social-service
+      - message-service
       - chat-service
       - media-service
       - notification-service
@@ -642,6 +764,8 @@ volumes:
   user_db_data:
   post_db_data:
   comment_db_data:
+  social_db_data:
+  message_db_data:
   chat_db_data:
   media_db_data:
   notification_db_data:

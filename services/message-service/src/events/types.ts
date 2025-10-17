@@ -1,5 +1,19 @@
 export const TOPICS = {
-  // Add your topics here
+  MESSAGE_SENT: 'message.sent',
+  MESSAGE_READ: 'message.read',
 } as const;
 
-// Add your event interfaces here
+export interface MessageSentEvent {
+  eventType: 'message.sent';
+  messageId: string;
+  conversationId: string;
+  senderId: string;
+  timestamp: string;
+}
+
+export interface MessageReadEvent {
+  eventType: 'message.read';
+  conversationId: string;
+  userId: string;
+  timestamp: string;
+}

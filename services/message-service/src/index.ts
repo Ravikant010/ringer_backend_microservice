@@ -11,7 +11,7 @@ async function startServer() {
 
     // Start HTTP server
     app.listen(env.port, () => {
-      logger.info(`✅ ${env.serviceName} running on port ${env.port}`);
+      logger.info(`✅ message-service running on port ${env.port}`);
     });
   } catch (error) {
     logger.error('❌ Failed to start server:', error);

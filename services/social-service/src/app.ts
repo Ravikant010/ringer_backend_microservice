@@ -2,21 +2,18 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { env } from './config/env';
+import followRoutes from './routes/follow.routes';
 
 const app = express();
 
-// Middleware
 app.use(helmet());
 app.use(cors({ origin: env.frontendUrl, credentials: true }));
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: env.serviceName });
+  res.json({ status: 'ok', service: 'social-service' });
 });
 
-// Routes
-// TODO: Import and use your routes here
+app.use('/api/v1', followRoutes);
 
 export default app;
