@@ -19,8 +19,11 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 3007
 
 # Run Drizzle migrations
-RUN bun drizzle-kit introspect || true
-RUN bun drizzle-kit generate || true
-RUN bun drizzle-kit migrate || true
-RUN bun drizzle-kit push || true
-CMD ["bun", "run", "src/index.ts"]
+CMD ["sh", "-c", "\
+echo '🔍 Generating migration files...' && \
+npx drizzle-kit generate && \
+echo '🚀 Running migrations...' && \
+npx drizzle-kit migrate && \
+echo '✅ Migrations completed' && \
+echo '🎯 Starting application...' && \
+bun run src/index.ts"]
