@@ -1,4 +1,4 @@
-import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, index, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const follows = pgTable(
     'follows',
@@ -11,7 +11,9 @@ export const follows = pgTable(
     (table) => ({
         followerIdx: index('idx_follows_follower').on(table.followerId),
         followingIdx: index('idx_follows_following').on(table.followingId),
-        uniqueFollowIdx: index('idx_unique_follow').on(table.followerId, table.followingId),
+
+        uniqueFollowIdx: uniqueIndex('idx_unique_follow').on(table.followerId, table.followingId),
+
     })
 );
 

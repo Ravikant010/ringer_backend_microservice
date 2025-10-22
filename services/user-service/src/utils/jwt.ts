@@ -15,7 +15,7 @@ export interface TokenPayload {
 export class JWTService {
   private readonly accessTokenSecret = Bun.env.JWT_SECRET!
   private readonly refreshTokenSecret = Bun.env.JWT_REFRESH_SECRET!
-  private readonly accessTokenExpiry = '15m'
+  private readonly accessTokenExpiry = '7d'
   private readonly refreshTokenExpiry = '7d'
 
   generateAccessToken(user: User): string {

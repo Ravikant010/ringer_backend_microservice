@@ -1,15 +1,7 @@
-FROM oven/bun:latest
-
-
+FROM imbios/bun-node:latest
 WORKDIR /app
-
-# Copy package files
 COPY package.json bun.lockb* ./
-
-# Install dependencies
-RUN bun install --frozen-lockfile
-
-# Copy source code
+RUN bun install
 COPY . .
 
 # Health check
@@ -23,7 +15,7 @@ CMD ["sh", "-c", "\
 echo '🔍 Generating migration files...' && \
 npx drizzle-kit generate && \
 echo '🚀 Running migrations...' && \
-npx drizzle-kit migrate && \
+npx drizzle-kit push && \
 echo '✅ Migrations completed' && \
 echo '🎯 Starting application...' && \
 bun run src/index.ts"]

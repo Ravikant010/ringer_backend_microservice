@@ -13,23 +13,23 @@ export class ChatRepository {
 
     // Update or create conversation
     await this.updateConversation(senderId, receiverId, message.id, message.createdAt)
-    
+
     return message
   }
 
   async getConversationMessages(user1Id: string, user2Id: string, limit: number, cursor?: string) {
     const where = cursor
       ? and(
-          or(
-            and(eq(messages.senderId, user1Id), eq(messages.receiverId, user2Id)),
-            and(eq(messages.senderId, user2Id), eq(messages.receiverId, user1Id))
-          ),
-          lt(messages.id, cursor)
-        )
-      : or(
+        or(
           and(eq(messages.senderId, user1Id), eq(messages.receiverId, user2Id)),
           and(eq(messages.senderId, user2Id), eq(messages.receiverId, user1Id))
-        )
+        ),
+        lt(messages.id, cursor)
+      )
+      : or(
+        and(eq(messages.senderId, user1Id), eq(messages.receiverId, user2Id)),
+        and(eq(messages.senderId, user2Id), eq(messages.receiverId, user1Id))
+      )
 
     const rows = await db.select().from(messages)
       .where(where as any)
@@ -39,16 +39,16 @@ export class ChatRepository {
     const hasMore = rows.length > limit
     const items = hasMore ? rows.slice(0, limit) : rows
     const nextCursor = hasMore ? items[items.length - 1].id : undefined
-    
+
     return { items, nextCursor, hasMore }
   }
 
   async getUserConversations(userId: string, limit: number, cursor?: string) {
     const where = cursor
       ? and(
-          or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId)),
-          lt(conversations.id, cursor)
-        )
+        or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId)),
+        lt(conversations.id, cursor)
+      )
       : or(eq(conversations.user1Id, userId), eq(conversations.user2Id, userId))
 
     const rows = await db.select().from(conversations)
@@ -59,7 +59,7 @@ export class ChatRepository {
     const hasMore = rows.length > limit
     const items = hasMore ? rows.slice(0, limit) : rows
     const nextCursor = hasMore ? items[items.length - 1].id : undefined
-    
+
     return { items, nextCursor, hasMore }
   }
 
@@ -88,7 +88,7 @@ export class ChatRepository {
   private async updateConversation(user1Id: string, user2Id: string, messageId: string, messageAt: Date) {
     // Ensure consistent ordering for unique constraint
     const [smallerId, largerId] = [user1Id, user2Id].sort()
-    
+
     await db.insert(conversations)
       .values({
         user1Id: smallerId,
@@ -107,23 +107,34 @@ export class ChatRepository {
   }
 
   async updatePresence(userId: string, isOnline: boolean, socketId?: string) {
-    await db.insert(userPresence)
-      .values({
-        userId,
-        isOnline,
-        socketId,
-        lastSeen: new Date(),
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: userPresence.userId,
-        set: {
+    // ✅ CRITICAL FIX: Validate userId before database operation
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      console.error('❌ updatePresence called with invalid userId:', userId);
+      throw new Error('Valid userId is required for updatePresence');
+    }
+
+    try {
+      await db.insert(userPresence)
+        .values({
+          userId,
           isOnline,
           socketId: socketId || null,
           lastSeen: new Date(),
           updatedAt: new Date(),
-        },
-      })
+        })
+        .onConflictDoUpdate({
+          target: userPresence.userId,
+          set: {
+            isOnline,
+            socketId: socketId || null,
+            lastSeen: new Date(),
+            updatedAt: new Date(),
+          },
+        })
+    } catch (error) {
+      console.error('❌ Error updating presence for user:', userId, error);
+      throw error;
+    }
   }
 
   async getUserPresence(userId: string) {
