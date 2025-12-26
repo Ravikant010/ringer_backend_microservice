@@ -147,11 +147,6 @@ All actions are persisted to PostgreSQL databases:
 - Follows  
 - Messages  
 - Notifications  
-
-## 👨‍💻 Author
-
-**Ravi**
-
 ---
 
 Built with ❤️ using Event-Driven Architecture and Microservices.
