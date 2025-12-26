@@ -148,14 +148,6 @@ All actions are persisted to PostgreSQL databases:
 - Messages  
 - Notifications  
 
-## 🤝 Contributing
-
-Contributions are welcome! Please submit a Pull Request.
-
-## 📄 License
-
-Licensed under the **MIT License** – see LICENSE file for details.
-
 ## 👨‍💻 Author
 
 **Ravi**
